@@ -20,7 +20,7 @@ export default function TabTwoScreen() {
           name="chevron.left.forwardslash.chevron.right"
           style={styles.headerImage}
         />
-      }>
+      }>. 
       <ThemedView style={styles.titleContainer}>
         <ThemedText
           type="title"
@@ -76,7 +76,7 @@ export default function TabTwoScreen() {
         </ExternalLink>
       </Collapsible>
       <Collapsible title="Animations">
-        <ThemedText>
+        {/* <ThemedText>
           This template includes an example of an animated component. The{' '}
           <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
           the powerful{' '}
@@ -84,7 +84,7 @@ export default function TabTwoScreen() {
             react-native-reanimated
           </ThemedText>{' '}
           library to create a waving hand animation.
-        </ThemedText>
+        </ThemedText> */}
         {Platform.select({
           ios: (
             <ThemedText>
