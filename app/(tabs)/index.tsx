@@ -1,9 +1,11 @@
-import { Redirect } from 'expo-router';
+import { View, Text } from 'react-native';
 
-export default function Index() {
-  const isLoggedIn = false; // later from SecureStore / AsyncStorage
-
-  return isLoggedIn
-    ? <Redirect href="/(tabs)" />
-    : <Redirect href="/(auth)/login" />;
+export default function HomeScreen() {
+  return (
+    <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ color: 'white', fontSize: 18 }}>
+        Any data text in white
+      </Text>
+    </View>
+  );
 }

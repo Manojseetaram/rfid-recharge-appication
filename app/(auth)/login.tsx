@@ -16,15 +16,18 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter email and password');
-      return;
-    }
+ const handleLogin = async () => {
+  if (!email || !password) {
+    Alert.alert('Error', 'Please enter email and password');
+    return;
+  }
 
-    // 🔐 TODO: backend authentication
-    router.replace('/(tabs)');
-  };
+  // TODO: save login state
+  // await SecureStore.setItemAsync('token', 'abc');
+
+  router.replace('/(tabs)');
+};
+
 
   const handleForgotPassword = () => {
     Alert.alert(
