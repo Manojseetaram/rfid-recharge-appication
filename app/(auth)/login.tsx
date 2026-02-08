@@ -6,39 +6,39 @@ import {
   StyleSheet,
   Alert,
   Linking,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+} from "react-native";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function LoginScreen() {
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter email and password");
+      return;
+    }
 
- const handleLogin = async () => {
-  if (!email || !password) {
-    Alert.alert('Error', 'Please enter email and password');
-    return;
-  }
+    // ✅ SAVE LOGIN STATE
+    await AsyncStorage.setItem("user_email", email.trim());
+    await AsyncStorage.setItem("is_logged_in", "true");
 
-  // TODO: save login state
-  // await SecureStore.setItemAsync('token', 'abc');
-
-  router.replace('/(tabs)/home');
-};
-
+    router.replace("/(tabs)/home");
+  };
 
   const handleForgotPassword = () => {
     Alert.alert(
-      'Contact Support',
-      'Email: lorentatechnolgy@gmail.com\nPhone: 7899957067',
+      "Contact Support",
+      "Email: lorentatechnolgy@gmail.com\nPhone: 7899957067",
       [
         {
-          text: 'Call Now',
-          onPress: () => Linking.openURL('tel:7899957067'),
+          text: "Call Now",
+          onPress: () => Linking.openURL("tel:7899957067"),
         },
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
       ]
     );
   };
@@ -76,6 +76,7 @@ export default function LoginScreen() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -117,3 +118,4 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
