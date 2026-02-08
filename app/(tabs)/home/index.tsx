@@ -1,27 +1,33 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import {
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 
 export default function HomeScreen() {
   const router = useRouter();
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Printing Devices</Text>
 
-      <View style={styles.card}>
+      <SafeAreaView style={styles.card}>
         <Text style={styles.cardTitle}>Printer Division 1</Text>
         <Text style={styles.status}>Status: Not Connected</Text>
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/(tabs)/home/connect')}
+          onPress={() => router.push("/(tabs)/home/connect")}
         >
           <Text style={styles.buttonText}>Connect</Text>
         </TouchableOpacity>
-      </View>
-    </View>
+      </SafeAreaView>
+    </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

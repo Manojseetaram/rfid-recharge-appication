@@ -14,17 +14,7 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="connect"
-        options={{
-          title: "Connect",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bluetooth" size={size} color={color} />
-          ),
-        }}
-      />
-
-      {/* ✅ NEW HISTORY TAB */}
+      {/* ✅ ONLY HISTORY TAB */}
       <Tabs.Screen
         name="history"
         options={{

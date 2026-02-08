@@ -1,24 +1,22 @@
 import { View, Text, StyleSheet, FlatList } from "react-native";
+import { useHistory } from "../context/HistoryContext";
 
-const historyData = [
-  {
-    id: "CARD-1023",
-    amount: 25,
-  },
-  {
-    id: "CARD-2041",
-    amount: 40,
-  },
-];
 
 export default function HistoryScreen() {
+  const { history } = useHistory();
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Print History</Text>
 
       <FlatList
-        data={historyData}
+        data={history}
         keyExtractor={(item) => item.id}
+        ListEmptyComponent={
+          <Text style={{ color: "#FFF", textAlign: "center" }}>
+            No history yet
+          </Text>
+        }
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.cardText}>Card ID: {item.id}</Text>
@@ -29,6 +27,7 @@ export default function HistoryScreen() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
