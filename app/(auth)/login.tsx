@@ -25,7 +25,7 @@ export default function LoginScreen() {
   // TODO: save login state
   // await SecureStore.setItemAsync('token', 'abc');
 
-  router.replace('/(tabs)');
+  router.replace('/(tabs)/home');
 };
 
 

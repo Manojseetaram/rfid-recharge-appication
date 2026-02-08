@@ -7,5 +7,5 @@ export default function AppEntry() {
     return <Redirect href="/(auth)/login" />;
   }
 
-  return <Redirect href="/(tabs)" />;
+  return <Redirect href="/(tabs)/home" />;
 }

@@ -1,29 +1,21 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
   const router = useRouter();
 
-  const handleConnect = () => {
-    // Later: real Bluetooth logic
-    router.push('/(tabs)/printer');
-  };
-
   return (
     <View style={styles.container}>
-      <Text style={styles.pageTitle}>Printing Devices</Text>
+      <Text style={styles.title}>Printing Devices</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Printer Division 1</Text>
-
         <Text style={styles.status}>Status: Not Connected</Text>
 
-        <TouchableOpacity style={styles.button} onPress={handleConnect}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push('/(tabs)/home/connect')}
+        >
           <Text style={styles.buttonText}>Connect</Text>
         </TouchableOpacity>
       </View>
@@ -37,12 +29,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#38208C',
     padding: 20,
   },
-  pageTitle: {
+  title: {
     color: '#F2CB07',
     fontSize: 22,
     fontWeight: '700',
-    marginBottom: 20,
     textAlign: 'center',
+    marginBottom: 20,
   },
   card: {
     backgroundColor: '#2D1873',
@@ -53,7 +45,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   status: {
     color: '#FFFFFF',
