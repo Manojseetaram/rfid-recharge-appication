@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from "reac
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { addTransaction } from "./transactionStore";
+import { addTransaction } from "./transactionStore";  // ← Import here
 
 export default function InitializeScreen() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export default function InitializeScreen() {
       return;
     }
 
-    // Add to transaction history and update balance
+    // ✅ Add transaction to store
     addTransaction("initialize", parseFloat(amount));
 
     // TODO: Send Bluetooth command to initialize card
@@ -25,6 +25,8 @@ export default function InitializeScreen() {
       `Card initialized with ₹${amount}`,
       [{ text: "OK", onPress: () => router.back() }]
     );
+    
+    setAmount(""); // Clear input
   };
 
   return (

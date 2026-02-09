@@ -3,29 +3,23 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { getBalance } from "./transactionStore";
+import { getBalance } from "./transactionStore";  // ← Import here
 
 export default function BalanceScreen() {
   const router = useRouter();
   const { deviceName, deviceId } = useLocalSearchParams();
   const [balance, setBalance] = useState<number>(0);
-  const [loading, setLoading] = useState(false);
 
   const fetchBalance = () => {
-    setLoading(true);
-    // Get balance from store
-    setTimeout(() => {
-      const currentBalance = getBalance();
-      setBalance(currentBalance);
-      setLoading(false);
-    }, 500);
+    const currentBalance = getBalance();
+    setBalance(currentBalance);
   };
 
   useEffect(() => {
     fetchBalance();
   }, []);
 
-  // Refresh when screen comes into focus
+  // Auto-refresh balance every second
   useEffect(() => {
     const interval = setInterval(() => {
       setBalance(getBalance());
