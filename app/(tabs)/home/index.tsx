@@ -6,9 +6,11 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { scanForDevices } from "@/app/bluetooth/bluetooth";
 import { requestBlePermissions } from "@/app/bluetooth/permissions";
@@ -54,7 +56,6 @@ export default function HomeScreen() {
     }, 5000);
   };
 
-
   const connectToDevice = async (device: any) => {
     try {
       setScanning(false);
@@ -66,14 +67,32 @@ export default function HomeScreen() {
       await device.discoverAllServicesAndCharacteristics();
       console.log("Services discovered");
 
-    router.push({
-  pathname: "/home/connect", 
-  params: { deviceName: device.name, deviceId: device.id },
-});
-
+      router.push({
+        pathname: "/home/connect",
+        params: { deviceName: device.name, deviceId: device.id },
+      });
     } catch (err) {
       console.log("Connection error:", err);
     }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            await AsyncStorage.removeItem("is_logged_in");
+            await AsyncStorage.removeItem("user_email");
+            router.replace("/login");
+          },
+        },
+      ]
+    );
   };
 
   useEffect(() => {
@@ -89,16 +108,25 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
-        <Ionicons name="bluetooth" size={24} color="#F2CB07" />
-        <Text style={styles.headerTitle}>Available Devices</Text>
+        <View style={styles.headerLeft}>
+          <Ionicons name="bluetooth" size={24} color="#F2CB07" />
+          <Text style={styles.headerTitle}>Available Devices</Text>
+        </View>
 
-        <TouchableOpacity onPress={startScan} disabled={scanning}>
-          <Ionicons
-            name={scanning ? "refresh-circle" : "refresh"}
-            size={26}
-            color="#F2CB07"
-          />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={startScan} disabled={scanning} style={styles.iconButton}>
+            <Ionicons
+              name={scanning ? "refresh-circle" : "refresh"}
+              size={26}
+              color="#F2CB07"
+            />
+          </TouchableOpacity>
+
+          {/* LOGOUT BUTTON */}
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+            <Ionicons name="log-out-outline" size={26} color="#FF5252" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* DEVICE LIST */}
@@ -135,11 +163,42 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#38208C", padding: 20 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   headerTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "600" },
+  iconButton: {
+    padding: 4,
+  },
+  logoutButton: {
+    padding: 4,
+  },
   card: { backgroundColor: "#2D1873", borderRadius: 14, padding: 20 },
-  cardTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "600", marginBottom: 8 },
+  cardTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
   status: { color: "#FFFFFF", marginBottom: 20, fontSize: 12, opacity: 0.8 },
-  button: { backgroundColor: "#F2CB07", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  button: {
+    backgroundColor: "#F2CB07",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
   buttonText: { color: "#1A1426", fontSize: 16, fontWeight: "600" },
 });

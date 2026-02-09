@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from "reac
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { addTransaction } from "./transactionStore";  // ← Import here
+import { addTransaction } from "./transactionStore";
 
 export default function RechargeScreen() {
   const router = useRouter();
@@ -25,7 +25,6 @@ export default function RechargeScreen() {
       `Card recharged with ₹${amount}`,
       [{ text: "OK", onPress: () => router.back() }]
     );
-    
     setAmount(""); // Clear input
   };
 
@@ -44,22 +43,22 @@ export default function RechargeScreen() {
         <View style={styles.content}>
           <Text style={styles.label}>Enter Recharge Amount</Text>
 
-          {/* AMOUNT INPUT */}
+          {/* AMOUNT INPUT - Centered */}
           <View style={styles.inputContainer}>
-            <Text style={{ fontSize: 24, color: "#F2CB07", fontWeight: "700" }}>₹</Text>
+            <Text style={styles.rupeeSymbol}>₹</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter amount"
-              placeholderTextColor="rgba(255,255,255,0.5)"
+              placeholder="0"
+              placeholderTextColor="rgba(255,255,255,0.3)"
               keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}
             />
           </View>
 
-          {/* RECHARGE BUTTON */}
-          <TouchableOpacity style={styles.button} onPress={handleRecharge}>
-            <Text style={styles.buttonText}>Recharge Amount</Text>
+          {/* SUBMIT BUTTON - PhonePay style arrow */}
+          <TouchableOpacity style={styles.submitButton} onPress={handleRecharge}>
+            <Ionicons name="arrow-forward" size={28} color="#38208C" />
           </TouchableOpacity>
         </View>
       </View>
@@ -83,40 +82,45 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   label: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#FFF",
-    marginBottom: 20,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.8)",
+    marginBottom: 30,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(242, 203, 7, 0.3)",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginBottom: 30,
+    justifyContent: "center",
+    marginBottom: 40,
+  },
+  rupeeSymbol: {
+    fontSize: 48,
+    color: "#F2CB07",
+    fontWeight: "700",
+    marginRight: 8,
   },
   input: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#FFF",
-    marginLeft: 10,
-  },
-  button: {
-    backgroundColor: "#F2CB07",
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "#38208C",
-    fontSize: 18,
+    fontSize: 48,
     fontWeight: "700",
+    color: "#FFF",
+    minWidth: 100,
+    textAlign: "left",
+  },
+  submitButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#F2CB07",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
 });
