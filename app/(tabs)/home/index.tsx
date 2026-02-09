@@ -27,11 +27,8 @@ export default function HomeScreen() {
 
     const bleManager = getBleManager();
     const state = await bleManager.state();
-    console.log("BLE STATE:", state);
-
     if (state !== "PoweredOn") return;
 
-    // cleanup previous scan
     bleManager.stopDeviceScan();
     if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
 
@@ -57,25 +54,23 @@ export default function HomeScreen() {
     }, 5000);
   };
 
-  // ✅ Connect to BLE and navigate to ConnectScreen
+  // ✅ Connect to BLE device and navigate to ConnectScreen
   const connectToDevice = async (device: any) => {
     try {
       setScanning(false);
-      const bleManager = getBleManager();
       console.log("Connecting to", device.name);
 
       await device.connect(); // connect to ESP32
       console.log("✅ Connected to", device.name);
 
-      // Optional: discover services & characteristics
       await device.discoverAllServicesAndCharacteristics();
       console.log("Services discovered");
 
-      // Navigate to ConnectScreen
-      router.push({
-        pathname: "./connect", // make sure your file is app/connect.tsx
-        params: { deviceId: device.id, deviceName: device.name },
-      });
+    router.push({
+  pathname: "/home/connect", // absolute from root
+  params: { deviceName: device.name, deviceId: device.id },
+});
+
     } catch (err) {
       console.log("❌ Connection error:", err);
     }
@@ -83,7 +78,6 @@ export default function HomeScreen() {
 
   useEffect(() => {
     startScan();
-
     return () => {
       const bleManager = getBleManager();
       bleManager.stopDeviceScan();
@@ -121,9 +115,7 @@ export default function HomeScreen() {
         }
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>
-              {item.name || "Unknown Device"}
-            </Text>
+            <Text style={styles.cardTitle}>{item.name || "Unknown Device"}</Text>
             <Text style={styles.status}>{item.id}</Text>
 
             <TouchableOpacity
@@ -142,55 +134,12 @@ export default function HomeScreen() {
 /* ---------------- STYLES ---------------- */
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#38208C",
-    padding: 20,
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-
-  headerTitle: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-
-  card: {
-    backgroundColor: "#2D1873",
-    borderRadius: 14,
-    padding: 20,
-  },
-
-  cardTitle: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-
-  status: {
-    color: "#FFFFFF",
-    marginBottom: 20,
-    fontSize: 12,
-    opacity: 0.8,
-  },
-
-  button: {
-    backgroundColor: "#F2CB07",
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-
-  buttonText: {
-    color: "#1A1426",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  container: { flex: 1, backgroundColor: "#38208C", padding: 20 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  headerTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "600" },
+  card: { backgroundColor: "#2D1873", borderRadius: 14, padding: 20 },
+  cardTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "600", marginBottom: 8 },
+  status: { color: "#FFFFFF", marginBottom: 20, fontSize: 12, opacity: 0.8 },
+  button: { backgroundColor: "#F2CB07", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  buttonText: { color: "#1A1426", fontSize: 16, fontWeight: "600" },
 });
