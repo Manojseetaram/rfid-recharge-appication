@@ -1,77 +1,12 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-} from "react-native";
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useState, useEffect, useRef } from "react";
-import { useHistory } from "../../context/HistoryContext";
-import { getBleManager } from "@/app/bluetooth/manager";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
-export default function ConnectScreen() {
+export default function CardHomeScreen() {
   const router = useRouter();
-  const { addHistory } = useHistory();
-  const params = useLocalSearchParams();
-
-  const [copies, setCopies] = useState("");
-  const [amount, setAmount] = useState("");
-  const [status, setStatus] = useState<"idle" | "processing" | "done">("idle");
-
-  // 🔹 Use ref to store connected device
-  const deviceRef = useRef<any>(null);
-
-  useEffect(() => {
-    const deviceId = params.deviceId as string;
-    if (!deviceId) return;
-
-    const bleManager = getBleManager();
-    bleManager.devices([deviceId]).then((devices) => {
-      if (devices.length > 0) {
-        deviceRef.current = devices[0];
-      }
-    });
-
-    // Cleanup: disconnect device when leaving screen
-    return () => {
-      if (deviceRef.current) {
-        deviceRef.current
-          .cancelConnection()
-          .then(() => console.log("✅ Device disconnected"))
-          .catch((err: any) => {
-            // Ignore errors if device already disconnected
-            if (!err.reason || err.reason !== "Device is not connected") {
-              console.log("❌ Error disconnecting:", err);
-            }
-          });
-      }
-    };
-  }, []); // 🔹 Empty dependency array → cleanup runs only on unmount
-
-  const handleProceedToPrint = () => {
-    const trimmedCopies = copies.trim();
-    const trimmedAmount = amount.trim();
-
-    if (!trimmedCopies || !trimmedAmount) return;
-
-    setStatus("processing");
-
-    setTimeout(() => {
-      addHistory({
-        id: `CARD-${Date.now()}`,
-        amount: Number(trimmedAmount),
-      });
-
-      setCopies("");
-      setAmount("");
-      setStatus("done");
-
-      setTimeout(() => setStatus("idle"), 2000);
-    }, 1200);
-  };
+  const { deviceName, deviceId } = useLocalSearchParams();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -79,54 +14,40 @@ export default function ConnectScreen() {
         {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
+            <Ionicons name="chevron-back" size={28} color="#FFF" />
           </TouchableOpacity>
-
-          <Text style={styles.headerTitle}>Printer Connected</Text>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>{deviceName || "Device"}</Text>
+            <Text style={styles.headerSubtitle}>Connected</Text>
+          </View>
           <View style={{ width: 28 }} />
         </View>
 
-        {/* CARD */}
-        <View style={styles.card}>
-          <Text style={styles.text}>Bluetooth: ON</Text>
-          <Text style={styles.text}>Status: Connected</Text>
+        {/* BOXES */}
+        <View style={styles.content}>
+          {/* Initialize Card - Full Width */}
+          <TouchableOpacity style={styles.boxFull}>
+            <Ionicons name="link" size={40} color="#F2CB07" />
+            <Text style={styles.boxText}>Initialize Card</Text>
+          </TouchableOpacity>
 
-          <TextInput
-            placeholder="Enter number of copies"
-            placeholderTextColor="#CFC6F5"
-            value={copies}
-            onChangeText={setCopies}
-            keyboardType="numeric"
-            editable={status !== "processing"}
-            style={styles.input}
-          />
+          {/* Recharge & Balance - Grid Row */}
+          <View style={styles.gridRow}>
+            <TouchableOpacity style={styles.boxHalf}>
+              <Ionicons name="card" size={36} color="#F2CB07" />
+              <Text style={styles.boxText}>Recharge</Text>
+            </TouchableOpacity>
 
-          <TextInput
-            placeholder="Enter amount"
-            placeholderTextColor="#CFC6F5"
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            editable={status !== "processing"}
-            style={styles.input}
-          />
+            <TouchableOpacity style={styles.boxHalf}>
+              <Ionicons name="wallet" size={36} color="#F2CB07" />
+              <Text style={styles.boxText}>Balance</Text>
+            </TouchableOpacity>
+          </View>
 
-          {status === "processing" && (
-            <Text style={styles.statusText}>Processing print…</Text>
-          )}
-          {status === "done" && (
-            <Text style={styles.successText}>Print successful</Text>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.button,
-              (!copies.trim() || !amount.trim() || status === "processing") && { opacity: 0.6 },
-            ]}
-            onPress={handleProceedToPrint}
-            disabled={!copies.trim() || !amount.trim() || status === "processing"}
-          >
-            <Text style={styles.buttonText}>Proceed to Print</Text>
+          {/* History - Full Width */}
+          <TouchableOpacity style={styles.boxFull}>
+            <Ionicons name="time" size={40} color="#F2CB07" />
+            <Text style={styles.boxText}>History</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -137,13 +58,59 @@ export default function ConnectScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#38208C" },
   container: { flex: 1, padding: 20 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  headerTitle: { color: "#F2CB07", fontSize: 20, fontWeight: "700" },
-  card: { backgroundColor: "#2D1873", borderRadius: 14, padding: 20 },
-  text: { color: "#FFFFFF", fontSize: 16, marginBottom: 12 },
-  input: { backgroundColor: "#3E2A9B", borderRadius: 10, padding: 14, color: "#FFFFFF", marginTop: 12 },
-  statusText: { color: "#FFFFFF", marginTop: 14, textAlign: "center" },
-  successText: { color: "#F2CB07", marginTop: 14, textAlign: "center", fontWeight: "600" },
-  button: { backgroundColor: "#F2CB07", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginTop: 20 },
-  buttonText: { color: "#1A1426", fontSize: 16, fontWeight: "600" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 30,
+  },
+  headerCenter: {
+    alignItems: "center",
+  },
+  headerTitle: { 
+    fontSize: 20, 
+    fontWeight: "600", 
+    color: "#FFF" 
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: "#F2CB07",
+    marginTop: 2,
+  },
+  content: {
+    flex: 1,
+    gap: 20,
+  },
+  boxFull: {
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    width: "100%",
+    height: 140,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(242, 203, 7, 0.3)",
+  },
+  gridRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 20,
+  },
+  boxHalf: {
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    flex: 1,
+    height: 140,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(242, 203, 7, 0.3)",
+  },
+  boxText: {
+    marginTop: 10,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#FFF",
+    textAlign: "center",
+  },
 });
