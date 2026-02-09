@@ -13,6 +13,7 @@ const HistoryContext = createContext<{
 export function HistoryProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
 
+  
   const addHistory = (item: HistoryItem) => {
     setHistory((prev) => [item, ...prev]);
   };

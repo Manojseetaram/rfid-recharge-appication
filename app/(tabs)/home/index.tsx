@@ -1,71 +1,196 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useEffect, useRef, useState } from "react";
 import {
-  Text,
+  FlatList,
   StyleSheet,
+  Text,
   TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
+import { scanForDevices } from "@/app/bluetooth/bluetooth";
+import { requestBlePermissions } from "@/app/bluetooth/permissions";
+import { getBleManager } from "@/app/bluetooth/manager";
+
 export default function HomeScreen() {
   const router = useRouter();
+  const [devices, setDevices] = useState<any[]>([]);
+  const [scanning, setScanning] = useState(false);
+
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startScan = async () => {
+    const ok = await requestBlePermissions();
+    if (!ok) return;
+
+    const bleManager = getBleManager();
+    const state = await bleManager.state();
+    console.log("BLE STATE:", state);
+
+    if (state !== "PoweredOn") return;
+
+    // cleanup previous scan
+    bleManager.stopDeviceScan();
+    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+
+    setDevices([]);
+    setScanning(true);
+
+    scanForDevices((device) => {
+      // 🔹 Only show your ESP32 devices
+      const isOurDevice =
+        device.name?.startsWith("Recharge-") ||
+        device.manufacturerData?.includes("RECHARGE");
+      if (!isOurDevice) return;
+
+      setDevices((prev) => {
+        if (prev.some((d) => d.id === device.id)) return prev;
+        return [...prev, device];
+      });
+    });
+
+    scanTimeoutRef.current = setTimeout(() => {
+      bleManager.stopDeviceScan();
+      setScanning(false);
+    }, 5000);
+  };
+
+  // ✅ Connect to BLE and navigate to ConnectScreen
+  const connectToDevice = async (device: any) => {
+    try {
+      setScanning(false);
+      const bleManager = getBleManager();
+      console.log("Connecting to", device.name);
+
+      await device.connect(); // connect to ESP32
+      console.log("✅ Connected to", device.name);
+
+      // Optional: discover services & characteristics
+      await device.discoverAllServicesAndCharacteristics();
+      console.log("Services discovered");
+
+      // Navigate to ConnectScreen
+      router.push({
+        pathname: "./connect", // make sure your file is app/connect.tsx
+        params: { deviceId: device.id, deviceName: device.name },
+      });
+    } catch (err) {
+      console.log("❌ Connection error:", err);
+    }
+  };
+
+  useEffect(() => {
+    startScan();
+
+    return () => {
+      const bleManager = getBleManager();
+      bleManager.stopDeviceScan();
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Printing Devices</Text>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Ionicons name="bluetooth" size={24} color="#F2CB07" />
+        <Text style={styles.headerTitle}>Available Devices</Text>
 
-      <SafeAreaView style={styles.card}>
-        <Text style={styles.cardTitle}>Printer Division 1</Text>
-        <Text style={styles.status}>Status: Not Connected</Text>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push("/(tabs)/home/connect")}
-        >
-          <Text style={styles.buttonText}>Connect</Text>
+        <TouchableOpacity onPress={startScan} disabled={scanning}>
+          <Ionicons
+            name={scanning ? "refresh-circle" : "refresh"}
+            size={26}
+            color="#F2CB07"
+          />
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
+
+      {/* DEVICE LIST */}
+      <FlatList
+        data={devices}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ gap: 12 }}
+        ListEmptyComponent={
+          !scanning ? (
+            <Text style={{ color: "#fff", textAlign: "center", marginTop: 40 }}>
+              No devices found
+            </Text>
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              {item.name || "Unknown Device"}
+            </Text>
+            <Text style={styles.status}>{item.id}</Text>
+
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => connectToDevice(item)}
+            >
+              <Text style={styles.buttonText}>Connect</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
     </SafeAreaView>
   );
 }
 
+/* ---------------- STYLES ---------------- */
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#38208C',
+    backgroundColor: "#38208C",
     padding: 20,
   },
-  title: {
-    color: '#F2CB07',
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 20,
+
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
+
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+
   card: {
-    backgroundColor: '#2D1873',
+    backgroundColor: "#2D1873",
     borderRadius: 14,
     padding: 20,
   },
+
   cardTitle: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 8,
   },
+
   status: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     marginBottom: 20,
+    fontSize: 12,
+    opacity: 0.8,
   },
+
   button: {
-    backgroundColor: '#F2CB07',
+    backgroundColor: "#F2CB07",
     paddingVertical: 12,
     borderRadius: 10,
-    alignItems: 'center',
+    alignItems: "center",
   },
+
   buttonText: {
-    color: '#1A1426',
+    color: "#1A1426",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });
