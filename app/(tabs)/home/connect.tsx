@@ -26,26 +26,50 @@ export default function CardHomeScreen() {
         {/* BOXES */}
         <View style={styles.content}>
           {/* Initialize Card - Full Width */}
-          <TouchableOpacity style={styles.boxFull}>
+          <TouchableOpacity 
+            style={styles.boxFull}
+            onPress={() => router.push({
+              pathname: "/home/initialize",
+              params: { deviceName, deviceId }
+            })}
+          >
             <Ionicons name="link" size={40} color="#F2CB07" />
             <Text style={styles.boxText}>Initialize Card</Text>
           </TouchableOpacity>
 
           {/* Recharge & Balance - Grid Row */}
           <View style={styles.gridRow}>
-            <TouchableOpacity style={styles.boxHalf}>
+            <TouchableOpacity 
+              style={styles.boxHalf}
+              onPress={() => router.push({
+                pathname: "/home/recharge",
+                params: { deviceName, deviceId }
+              })}
+            >
               <Ionicons name="card" size={36} color="#F2CB07" />
               <Text style={styles.boxText}>Recharge</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.boxHalf}>
+            <TouchableOpacity 
+              style={styles.boxHalf}
+              onPress={() => router.push({
+                pathname: "/home/balance",
+                params: { deviceName, deviceId }
+              })}
+            >
               <Ionicons name="wallet" size={36} color="#F2CB07" />
               <Text style={styles.boxText}>Balance</Text>
             </TouchableOpacity>
           </View>
 
           {/* History - Full Width */}
-          <TouchableOpacity style={styles.boxFull}>
+          <TouchableOpacity 
+            style={styles.boxFull}
+            onPress={() => router.push({
+              pathname: "/home/history",  // ← FIXED: Added /home/ prefix
+              params: { deviceName, deviceId }
+            })}
+          >
             <Ionicons name="time" size={40} color="#F2CB07" />
             <Text style={styles.boxText}>History</Text>
           </TouchableOpacity>
