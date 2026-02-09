@@ -1,31 +1,48 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { addTransaction } from "./transactionStore";
+import CustomAlert from "./customalert";
+
 
 export default function RechargeScreen() {
   const router = useRouter();
   const { deviceName, deviceId } = useLocalSearchParams();
   const [amount, setAmount] = useState("");
+  
+  // Alert states
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertType, setAlertType] = useState<"success" | "error">("success");
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
 
   const handleRecharge = () => {
     if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount");
+      setAlertType("error");
+      setAlertTitle("Invalid Amount");
+      setAlertMessage("Please enter a valid amount");
+      setShowAlert(true);
       return;
     }
 
     // ✅ Add transaction to store
     addTransaction("recharge", parseFloat(amount));
 
-    // TODO: Send Bluetooth command to recharge card
-    Alert.alert(
-      "Success", 
-      `Card recharged with ₹${amount}`,
-      [{ text: "OK", onPress: () => router.back() }]
-    );
-    setAmount(""); // Clear input
+    // Show success alert
+    setAlertType("success");
+    setAlertTitle("Success!");
+    setAlertMessage(`Card recharged with ₹${amount}`);
+    setShowAlert(true);
+  };
+
+  const handleAlertClose = () => {
+    setShowAlert(false);
+    if (alertType === "success") {
+      setAmount(""); // Clear input on success
+      router.back();
+    }
   };
 
   return (
@@ -61,6 +78,15 @@ export default function RechargeScreen() {
             <Ionicons name="arrow-forward" size={28} color="#38208C" />
           </TouchableOpacity>
         </View>
+
+        {/* Custom Alert */}
+        <CustomAlert
+          visible={showAlert}
+          type={alertType}
+          title={alertTitle}
+          message={alertMessage}
+          onConfirm={handleAlertClose}
+        />
       </View>
     </SafeAreaView>
   );

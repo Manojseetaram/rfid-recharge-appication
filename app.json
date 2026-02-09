@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "rfid",
-    "slug": "rfid",
+    "name": "Lorent",
+    "slug": "Lorent",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "rfid",
+    "icon": "./assets/images/Lorenta-1.png",
+    "scheme": "Lorent",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -32,14 +32,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/Lorenta-1.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/Lorenta-1.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

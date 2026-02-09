@@ -6,94 +6,105 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+
 import { scanForDevices } from "@/app/bluetooth/bluetooth";
 import { requestBlePermissions } from "@/app/bluetooth/permissions";
-import { getBleManager } from "@/app/bluetooth/manager";
+import { disconnectDevice, getBleManager, setConnectedDevice } from "@/app/bluetooth/manager";
+import CustomAlert from "./customalert";
 
 export default function HomeScreen() {
   const router = useRouter();
   const [devices, setDevices] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [showLogoutAlert, setShowLogoutAlert] = useState(false);
 
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const startScan = async () => {
-    const ok = await requestBlePermissions();
-    if (!ok) return;
+const startScan = async () => {
+  const ok = await requestBlePermissions();
+  if (!ok) return;
 
-    const bleManager = getBleManager();
-    const state = await bleManager.state();
-    if (state !== "PoweredOn") return;
+  const bleManager = getBleManager();
+  const state = await bleManager.state();
+  if (state !== "PoweredOn") return;
 
-    bleManager.stopDeviceScan();
-    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+  // Stop any previous scan
+  bleManager.stopDeviceScan();
+  if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
 
-    setDevices([]);
-    setScanning(true);
+  setScanning(true);
 
-    scanForDevices((device) => {
-      // 🔹 Only show your ESP32 devices
-      const isOurDevice =
-        device.name?.startsWith("Recharge-") ||
-        device.manufacturerData?.includes("RECHARGE");
-      if (!isOurDevice) return;
+  scanForDevices((device) => {
+    const isOurDevice =
+      device.name?.startsWith("Recharge-") ||
+      device.manufacturerData?.includes("RECHARGE");
+    if (!isOurDevice) return;
 
-      setDevices((prev) => {
-        if (prev.some((d) => d.id === device.id)) return prev;
-        return [...prev, device];
-      });
+    setDevices((prev) => {
+      // Merge new device if not already in list
+      if (prev.some((d) => d.id === device.id)) return prev;
+      return [...prev, device];
     });
+  });
 
-    scanTimeoutRef.current = setTimeout(() => {
-      bleManager.stopDeviceScan();
-      setScanning(false);
-    }, 5000);
-  };
+  scanTimeoutRef.current = setTimeout(() => {
+    bleManager.stopDeviceScan();
+    setScanning(false);
+  }, 5000);
+};
 
-  const connectToDevice = async (device: any) => {
-    try {
-      setScanning(false);
-      console.log("Connecting to", device.name);
 
-      await device.connect(); // connect to ESP32
-      console.log("Connected to", device.name);
 
-      await device.discoverAllServicesAndCharacteristics();
-      console.log("Services discovered");
 
-      router.push({
-        pathname: "/home/connect",
-        params: { deviceName: device.name, deviceId: device.id },
-      });
-    } catch (err) {
-      console.log("Connection error:", err);
-    }
-  };
+const connectToDevice = async (device: any) => {
+  try {
+    setScanning(false);
+    console.log("Connecting to", device.name);
+
+    // Disconnect previous device if any
+    await disconnectDevice();
+
+    // Connect new device
+    await device.connect();
+    console.log("Connected to", device.name);
+
+    await device.discoverAllServicesAndCharacteristics();
+    console.log("Services discovered");
+
+    // Save this device globally
+    setConnectedDevice(device);
+
+    router.push({
+      pathname: "/home/connect",
+      params: { deviceName: device.name, deviceId: device.id },
+    });
+  } catch (err) {
+    console.log("Connection error:", err);
+  }
+};
+
 
   const handleLogout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to logout?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          style: "destructive",
-          onPress: async () => {
-            await AsyncStorage.removeItem("is_logged_in");
-            await AsyncStorage.removeItem("user_email");
-            router.replace("/login");
-          },
-        },
-      ]
-    );
+    setShowLogoutAlert(true);
   };
+
+  const confirmLogout = async () => {
+  // Disconnect BLE device first
+  await disconnectDevice();
+
+  // Clear local storage
+  await AsyncStorage.removeItem("is_logged_in");
+  await AsyncStorage.removeItem("user_email");
+  
+  setShowLogoutAlert(false);
+  router.replace("/login");
+};
+
 
   useEffect(() => {
     startScan();
@@ -154,6 +165,18 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         )}
+      />
+
+      {/* Logout Confirmation Alert */}
+      <CustomAlert
+        visible={showLogoutAlert}
+        type="confirm"
+        title="Logout"
+        message="Are you sure you want to logout?"
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutAlert(false)}
+        confirmText="Logout"
+        cancelText="Cancel"
       />
     </SafeAreaView>
   );

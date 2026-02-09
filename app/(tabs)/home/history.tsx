@@ -1,12 +1,5 @@
 import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -31,24 +24,26 @@ export default function HistoryScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Filter transactions based on selected period
   const getFilteredTransactions = () => {
     const now = new Date();
+    
     return transactions.filter((transaction) => {
       const transactionDate = new Date(transaction.date);
-
+      
       switch (filter) {
         case "weekly":
           const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           return transactionDate >= weekAgo;
-
+        
         case "monthly":
           const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
           return transactionDate >= monthAgo;
-
+        
         case "yearly":
           const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
           return transactionDate >= yearAgo;
-
+        
         case "all":
         default:
           return true;
@@ -56,6 +51,7 @@ export default function HistoryScreen() {
     });
   };
 
+  // Calculate total for filtered transactions
   const calculateTotal = () => {
     const filtered = getFilteredTransactions();
     return filtered.reduce((total, transaction) => {
@@ -72,10 +68,15 @@ export default function HistoryScreen() {
     return (
       <View style={styles.transactionCard}>
         <View style={styles.transactionLeft}>
-          <View
-            style={[styles.iconContainer, isCredit ? styles.iconCredit : styles.iconDebit]}
-          >
-            <Ionicons name={isCredit ? "arrow-down" : "arrow-up"} size={20} color="#38208C" />
+          <View style={[
+            styles.iconContainer, 
+            isCredit ? styles.iconCredit : styles.iconDebit
+          ]}>
+            <Ionicons 
+              name={isCredit ? "arrow-down" : "arrow-up"} 
+              size={20} 
+              color="#38208C" 
+            />
           </View>
           <View>
             <Text style={styles.transactionType}>
@@ -84,9 +85,10 @@ export default function HistoryScreen() {
             <Text style={styles.transactionDate}>{item.date}</Text>
           </View>
         </View>
-        <Text
-          style={[styles.transactionAmount, isCredit ? styles.amountCredit : styles.amountDebit]}
-        >
+        <Text style={[
+          styles.transactionAmount,
+          isCredit ? styles.amountCredit : styles.amountDebit
+        ]}>
           {isCredit ? "+" : "-"}₹{item.amount}
         </Text>
       </View>
@@ -98,7 +100,9 @@ export default function HistoryScreen() {
       style={[styles.filterButton, filter === type && styles.filterButtonActive]}
       onPress={() => setFilter(type)}
     >
-      <Text style={[styles.filterText, filter === type && styles.filterTextActive]}>{label}</Text>
+      <Text style={[styles.filterText, filter === type && styles.filterTextActive]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -115,8 +119,8 @@ export default function HistoryScreen() {
         </View>
 
         {/* Filter Buttons */}
-        <ScrollView
-          horizontal
+        <ScrollView 
+          horizontal 
           showsHorizontalScrollIndicator={false}
           style={styles.filterContainer}
           contentContainerStyle={styles.filterContent}
@@ -130,13 +134,9 @@ export default function HistoryScreen() {
         {/* Total Card */}
         <View style={styles.totalCard}>
           <Text style={styles.totalLabel}>
-            {filter === "all"
-              ? "Total Balance"
-              : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Total`}
+            {filter === "all" ? "Total Balance" : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Total`}
           </Text>
-          <Text
-            style={[styles.totalAmount, total >= 0 ? styles.totalPositive : styles.totalNegative]}
-          >
+          <Text style={[styles.totalAmount, total >= 0 ? styles.totalPositive : styles.totalNegative]}>
             ₹{Math.abs(total).toFixed(2)}
           </Text>
         </View>
@@ -146,11 +146,7 @@ export default function HistoryScreen() {
           data={filteredTransactions}
           keyExtractor={(item) => item.id}
           renderItem={renderTransaction}
-          contentContainerStyle={{
-            paddingBottom: 60, // bigger bottom gap for better UI
-            gap: 12,
-            paddingTop: 10,
-          }}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <Text style={styles.emptyText}>No transactions in this period</Text>
@@ -168,17 +164,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#FFF",
+  headerTitle: { 
+    fontSize: 20, 
+    fontWeight: "600", 
+    color: "#FFF" 
   },
-
+  
   // Filter Buttons
-  filterContainer: { marginBottom: 8 },
-  filterContent: { gap: 8 },
+  filterContainer: {
+    marginBottom: 16,
+    paddingBottom:20,
+    maxHeight: 40,
+    flexGrow: 0,
+  },
+  filterContent: {
+    gap: 8,
+    
+  },
   filterButton: {
     paddingHorizontal: 20,
     height: 40,
@@ -188,6 +192,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(242, 203, 7, 0.3)",
     justifyContent: "center",
     alignItems: "center",
+    
   },
   filterButtonActive: {
     backgroundColor: "#F2CB07",
@@ -198,7 +203,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "rgba(255, 255, 255, 0.7)",
   },
-  filterTextActive: { color: "#38208C" },
+  filterTextActive: {
+    color: "#38208C",
+  },
 
   // Total Card
   totalCard: {
@@ -207,7 +214,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#F2CB07",
     padding: 20,
-    marginVertical: 12,
+    marginBottom: 16,
     alignItems: "center",
   },
   totalLabel: {
@@ -216,9 +223,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: "500",
   },
-  totalAmount: { fontSize: 32, fontWeight: "700" },
-  totalPositive: { color: "#F2CB07" },
-  totalNegative: { color: "#FF5252" },
+  totalAmount: {
+    fontSize: 32,
+    fontWeight: "700",
+  },
+  totalPositive: {
+    color: "#F2CB07",
+  },
+  totalNegative: {
+    color: "#FF5252",
+  },
 
   // Transaction Cards
   transactionCard: {
@@ -231,7 +245,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  transactionLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  transactionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   iconContainer: {
     width: 40,
     height: 40,
@@ -239,18 +257,40 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  iconCredit: { backgroundColor: "#F2CB07" },
-  iconDebit: { backgroundColor: "#FF5252" },
-  transactionType: { fontSize: 16, fontWeight: "600", color: "#FFF" },
-  transactionDate: { fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 2 },
-  transactionAmount: { fontSize: 18, fontWeight: "700" },
-  amountCredit: { color: "#F2CB07" },
-  amountDebit: { color: "#FF5252" },
-
+  iconCredit: {
+    backgroundColor: "#F2CB07",
+  },
+  iconDebit: {
+    backgroundColor: "#FF5252",
+  },
+  transactionType: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FFF",
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.6)",
+    marginTop: 2,
+  },
+  transactionAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  amountCredit: {
+    color: "#F2CB07",
+  },
+  amountDebit: {
+    color: "#FF5252",
+  },
   emptyText: {
     color: "#FFF",
     textAlign: "center",
     marginTop: 40,
     fontSize: 16,
+  },
+  listContent: {
+    gap: 12,
+    paddingBottom: 20,
   },
 });

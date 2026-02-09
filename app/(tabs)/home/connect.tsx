@@ -1,13 +1,21 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { disconnectDevice } from "@/app/bluetooth/manager";
 
 export default function CardHomeScreen() {
   const router = useRouter();
   const { deviceName, deviceId } = useLocalSearchParams();
 
+  useEffect(() => {
+    return () => {
+      // Disconnect device when leaving this page
+      disconnectDevice();
+    };
+  }, []);
+  
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
