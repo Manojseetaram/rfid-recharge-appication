@@ -54,25 +54,25 @@ export default function HomeScreen() {
     }, 5000);
   };
 
-  // ✅ Connect to BLE device and navigate to ConnectScreen
+
   const connectToDevice = async (device: any) => {
     try {
       setScanning(false);
       console.log("Connecting to", device.name);
 
       await device.connect(); // connect to ESP32
-      console.log("✅ Connected to", device.name);
+      console.log("Connected to", device.name);
 
       await device.discoverAllServicesAndCharacteristics();
       console.log("Services discovered");
 
     router.push({
-  pathname: "/home/connect", // absolute from root
+  pathname: "/home/connect", 
   params: { deviceName: device.name, deviceId: device.id },
 });
 
     } catch (err) {
-      console.log("❌ Connection error:", err);
+      console.log("Connection error:", err);
     }
   };
 

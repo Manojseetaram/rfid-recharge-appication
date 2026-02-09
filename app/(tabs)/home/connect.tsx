@@ -6,18 +6,50 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useHistory } from "../../context/HistoryContext";
+import { getBleManager } from "@/app/bluetooth/manager";
 
 export default function ConnectScreen() {
   const router = useRouter();
   const { addHistory } = useHistory();
+  const params = useLocalSearchParams();
 
   const [copies, setCopies] = useState("");
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<"idle" | "processing" | "done">("idle");
+
+  // 🔹 Use ref to store connected device
+  const deviceRef = useRef<any>(null);
+
+  useEffect(() => {
+    const deviceId = params.deviceId as string;
+    if (!deviceId) return;
+
+    const bleManager = getBleManager();
+    bleManager.devices([deviceId]).then((devices) => {
+      if (devices.length > 0) {
+        deviceRef.current = devices[0];
+      }
+    });
+
+    // Cleanup: disconnect device when leaving screen
+    return () => {
+      if (deviceRef.current) {
+        deviceRef.current
+          .cancelConnection()
+          .then(() => console.log("✅ Device disconnected"))
+          .catch((err: any) => {
+            // Ignore errors if device already disconnected
+            if (!err.reason || err.reason !== "Device is not connected") {
+              console.log("❌ Error disconnecting:", err);
+            }
+          });
+      }
+    };
+  }, []); // 🔹 Empty dependency array → cleanup runs only on unmount
 
   const handleProceedToPrint = () => {
     const trimmedCopies = copies.trim();
@@ -33,32 +65,24 @@ export default function ConnectScreen() {
         amount: Number(trimmedAmount),
       });
 
-      // ✅ CLEAR INPUTS
       setCopies("");
       setAmount("");
-
-      // ✅ SHOW SUCCESS
       setStatus("done");
 
-      // ✅ RESET STATUS AFTER 2s
-      setTimeout(() => {
-        setStatus("idle");
-      }, 2000);
+      setTimeout(() => setStatus("idle"), 2000);
     }, 1200);
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        {/* 🔝 HEADER */}
+        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>Printer Connected</Text>
-
-          {/* spacer to center title */}
           <View style={{ width: 28 }} />
         </View>
 
@@ -90,7 +114,6 @@ export default function ConnectScreen() {
           {status === "processing" && (
             <Text style={styles.statusText}>Processing print…</Text>
           )}
-
           {status === "done" && (
             <Text style={styles.successText}>Print successful</Text>
           )}
@@ -98,16 +121,10 @@ export default function ConnectScreen() {
           <TouchableOpacity
             style={[
               styles.button,
-              (!copies.trim() ||
-                !amount.trim() ||
-                status === "processing") && { opacity: 0.6 },
+              (!copies.trim() || !amount.trim() || status === "processing") && { opacity: 0.6 },
             ]}
             onPress={handleProceedToPrint}
-            disabled={
-              !copies.trim() ||
-              !amount.trim() ||
-              status === "processing"
-            }
+            disabled={!copies.trim() || !amount.trim() || status === "processing"}
           >
             <Text style={styles.buttonText}>Proceed to Print</Text>
           </TouchableOpacity>
@@ -118,67 +135,15 @@ export default function ConnectScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#38208C",
-  },
-  container: {
-    flex: 1,
-    padding: 20,
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  headerTitle: {
-    color: "#F2CB07",
-    fontSize: 20,
-    fontWeight: "700",
-  },
-
-  card: {
-    backgroundColor: "#2D1873",
-    borderRadius: 14,
-    padding: 20,
-  },
-  text: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  input: {
-    backgroundColor: "#3E2A9B",
-    borderRadius: 10,
-    padding: 14,
-    color: "#FFFFFF",
-    marginTop: 12,
-  },
-
-  statusText: {
-    color: "#FFFFFF",
-    marginTop: 14,
-    textAlign: "center",
-  },
-  successText: {
-    color: "#F2CB07",
-    marginTop: 14,
-    textAlign: "center",
-    fontWeight: "600",
-  },
-
-  button: {
-    backgroundColor: "#F2CB07",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  buttonText: {
-    color: "#1A1426",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  safe: { flex: 1, backgroundColor: "#38208C" },
+  container: { flex: 1, padding: 20 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  headerTitle: { color: "#F2CB07", fontSize: 20, fontWeight: "700" },
+  card: { backgroundColor: "#2D1873", borderRadius: 14, padding: 20 },
+  text: { color: "#FFFFFF", fontSize: 16, marginBottom: 12 },
+  input: { backgroundColor: "#3E2A9B", borderRadius: 10, padding: 14, color: "#FFFFFF", marginTop: 12 },
+  statusText: { color: "#FFFFFF", marginTop: 14, textAlign: "center" },
+  successText: { color: "#F2CB07", marginTop: 14, textAlign: "center", fontWeight: "600" },
+  button: { backgroundColor: "#F2CB07", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginTop: 20 },
+  buttonText: { color: "#1A1426", fontSize: 16, fontWeight: "600" },
 });
