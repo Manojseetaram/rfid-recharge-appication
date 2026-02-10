@@ -4,26 +4,31 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
-  Linking,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import CustomAlert from "../(tabs)/home/customalert";
+
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  
+  // Alert states
+  const [showAlert, setShowAlert] = useState(false);
+  const [showContactAlert, setShowContactAlert] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert("Error", "Please enter email and password");
+      setShowAlert(true);
       return;
     }
 
@@ -34,17 +39,13 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    Alert.alert(
-      "Contact Support",
-      "Email: lorentatechnolgy@gmail.com\nPhone: 7899957067",
-      [
-        {
-          text: "Call Now",
-          onPress: () => Linking.openURL("tel:7899957067"),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    setShowContactAlert(true);
+  };
+
+  const handleCallSupport = () => {
+    setShowContactAlert(false);
+    const { Linking } = require("react-native");
+    Linking.openURL("tel:7899957067");
   };
 
   return (
@@ -54,13 +55,20 @@ export default function LoginScreen() {
         style={styles.container}
       >
         <View style={styles.content}>
-          {/* Logo/Icon */}
+          {/* Logo */}
           <View style={styles.logoContainer}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="card" size={40} color="#F2CB07" />
-            </View>
-            <Text style={styles.title}>Warden Login</Text>
-            <Text style={styles.subtitle}>Welcome back!</Text>
+            {/* TODO: Replace with your company logo */}
+            {/* <Image source={require('./path/to/logo.png')} style={styles.logo} /> */}
+            
+            {/* Placeholder for logo - remove this when adding real logo */}
+           
+              {/* <Ionicons name="business" size={48} color="#F2CB07" />
+              <Text style={styles.logoText}>Your Logo</Text> */}
+              
+
+<Image source={require('../../assets/images/Lorenta-1.png')} style={styles.logo} />
+            
+            <Text style={styles.title}>Login</Text>
           </View>
 
           {/* Form */}
@@ -123,6 +131,27 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Error Alert */}
+        <CustomAlert
+          visible={showAlert}
+          type="error"
+          title="Error"
+          message="Please enter email and password"
+          onConfirm={() => setShowAlert(false)}
+        />
+
+        {/* Contact Support Alert */}
+        <CustomAlert
+          visible={showContactAlert}
+          type="confirm"
+          title="Contact Support"
+          message="Email: lorentatechnolgy@gmail.com&#10;Phone: 7899957067"
+          onConfirm={handleCallSupport}
+          onCancel={() => setShowContactAlert(false)}
+          confirmText="Call Now"
+          cancelText="Cancel"
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -139,32 +168,45 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: "center",
-    padding: 24,
+    padding: 32,
   },
   logoContainer: {
     alignItems: "center",
     marginBottom: 48,
   },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  
+  // Logo placeholder - remove when adding real logo
+  logoPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 20,
     backgroundColor: "rgba(242, 203, 7, 0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: "rgba(242, 203, 7, 0.3)",
   },
+  logoText: {
+    color: "#F2CB07",
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: "600",
+  },
+  
+  // Real logo style - use this when adding your image
+  logo: {
+    width: 120,
+    height: 120,
+    resizeMode: "contain",
+    marginBottom: 24,
+  },
+  
   title: {
-    fontSize: 28,
+    fontSize: 32,
     color: "#FFF",
     textAlign: "center",
     fontWeight: "700",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "rgba(255, 255, 255, 0.7)",
-    textAlign: "center",
   },
   formContainer: {
     gap: 16,
@@ -195,11 +237,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   buttonText: {
     color: "#1A1426",

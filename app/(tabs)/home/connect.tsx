@@ -10,7 +10,7 @@ import {
   removeMonitor 
 } from "@/app/bluetooth/manager";
 
-import CustomAlert from "./customalert"; // Make sure path is correct
+import CustomAlert from "./customalert"; 
 
 export default function CardHomeScreen() {
   const router = useRouter();
