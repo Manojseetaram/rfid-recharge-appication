@@ -1,21 +1,44 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { disconnectDevice } from "@/app/bluetooth/manager";
+import { 
+  disconnectDevice, 
+  getConnectedDevice, 
+  monitorDevice, 
+  removeMonitor 
+} from "@/app/bluetooth/manager";
+
+import CustomAlert from "./customalert"; // Make sure path is correct
 
 export default function CardHomeScreen() {
   const router = useRouter();
   const { deviceName, deviceId } = useLocalSearchParams();
+  const [disconnected, setDisconnected] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
 
   useEffect(() => {
+    const device = getConnectedDevice();
+    if (device) {
+      monitorDevice(() => {
+        setDisconnected(true);
+        setShowAlert(true);
+      });
+    }
+
     return () => {
-      // Disconnect device when leaving this page
-      disconnectDevice();
+      removeMonitor();     // Remove subscription
+      disconnectDevice();  // Disconnect when leaving page
     };
   }, []);
-  
+
+  const handleAlertConfirm = async () => {
+    setShowAlert(false);
+    await disconnectDevice();
+    router.replace("/home"); // Go back to Home
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
@@ -26,7 +49,9 @@ export default function CardHomeScreen() {
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>{deviceName || "Device"}</Text>
-            <Text style={styles.headerSubtitle}>Connected</Text>
+            <Text style={styles.headerSubtitle}>
+              {disconnected ? "Disconnected" : "Connected"}
+            </Text>
           </View>
           <View style={{ width: 28 }} />
         </View>
@@ -70,18 +95,41 @@ export default function CardHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* History - Full Width */}
-          <TouchableOpacity 
-            style={styles.boxFull}
-            onPress={() => router.push({
-              pathname: "/home/history",  // ← FIXED: Added /home/ prefix
-              params: { deviceName, deviceId }
-            })}
-          >
-            <Ionicons name="time" size={40} color="#F2CB07" />
-            <Text style={styles.boxText}>History</Text>
-          </TouchableOpacity>
+          {/* History & Device Balance - Grid Row */}
+          <View style={styles.gridRow}>
+            <TouchableOpacity 
+              style={styles.boxHalf}
+              onPress={() => router.push({
+                pathname: "/home/history",
+                params: { deviceName, deviceId }
+              })}
+            >
+              <Ionicons name="time" size={36} color="#F2CB07" />
+              <Text style={styles.boxText}>History</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.boxHalf}
+              onPress={() => router.push({
+                pathname: "/home/devicebalance",
+                params: { deviceName, deviceId }
+              })}
+            >
+              <Ionicons name="wallet-outline" size={36} color="#F2CB07" />
+              <Text style={styles.boxText}>Device Balance</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Custom Alert for BLE Disconnect */}
+        <CustomAlert
+          visible={showAlert}
+          type="error"
+          title="Device Disconnected"
+          message={`${deviceName || "Device"} was disconnected.`}
+          onConfirm={handleAlertConfirm}
+          confirmText="OK"
+        />
       </View>
     </SafeAreaView>
   );

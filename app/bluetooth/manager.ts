@@ -3,6 +3,7 @@ import { BleManager, Device } from "react-native-ble-plx";
 
 let manager: BleManager | null = null;
 let connectedDevice: Device | null = null;
+let disconnectSubscription: any = null;
 
 export function getBleManager() {
   if (!manager) {
@@ -32,5 +33,31 @@ export async function disconnectDevice() {
     } finally {
       connectedDevice = null;
     }
+  }
+}
+
+// Monitor for sudden disconnections
+export function monitorDevice(onDisconnected: () => void) {
+  if (!connectedDevice) return;
+
+  // Remove previous subscription
+  if (disconnectSubscription) {
+    disconnectSubscription.remove();
+    disconnectSubscription = null;
+  }
+
+  disconnectSubscription = connectedDevice.onDisconnected((error, device) => {
+    console.log("Device unexpectedly disconnected:", device?.name);
+    connectedDevice = null;
+    disconnectSubscription = null;
+    onDisconnected();
+  });
+}
+
+// Remove monitor subscription
+export function removeMonitor() {
+  if (disconnectSubscription) {
+    disconnectSubscription.remove();
+    disconnectSubscription = null;
   }
 }
