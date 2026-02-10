@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CustomAlert from "../(tabs)/home/customalert";
+import { loginUser } from "../api/auth";
 
 
 export default function LoginScreen() {
@@ -26,17 +27,31 @@ export default function LoginScreen() {
   const [showAlert, setShowAlert] = useState(false);
   const [showContactAlert, setShowContactAlert] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      setShowAlert(true);
-      return;
+const handleLogin = async () => {
+  if (!email || !password) {
+    setShowAlert(true);
+    return;
+  }
+
+  try {
+    const result = await loginUser(email.trim(), password);
+
+    // 🔐 Save auth data
+    await AsyncStorage.setItem("is_logged_in", "true");
+    await AsyncStorage.setItem("user_email", email.trim());
+
+    if (result.token) {
+      await AsyncStorage.setItem("auth_token", result.token);
     }
 
-    // ✅ SAVE LOGIN STATE
-    await AsyncStorage.setItem("user_email", email.trim());
-    await AsyncStorage.setItem("is_logged_in", "true");
     router.replace("/(tabs)/home");
-  };
+  } catch (error: any) {
+    console.log("Login error:", error.message);
+
+    // You can reuse your CustomAlert here
+    setShowAlert(true);
+  }
+};
 
   const handleForgotPassword = () => {
     setShowContactAlert(true);
@@ -132,14 +147,14 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* Error Alert */}
-        <CustomAlert
-          visible={showAlert}
-          type="error"
-          title="Error"
-          message="Please enter email and password"
-          onConfirm={() => setShowAlert(false)}
-        />
+      <CustomAlert
+  visible={showAlert}
+  type="error"
+  title="Login Failed"
+  message="Invalid email or password"
+  onConfirm={() => setShowAlert(false)}
+/>
+
 
         {/* Contact Support Alert */}
         <CustomAlert
