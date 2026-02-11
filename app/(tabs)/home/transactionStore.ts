@@ -1,63 +1,42 @@
-// Simple in-memory store for transactions and balance
-type Transaction = {
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+export type Transaction = {
   id: string;
   type: "initialize" | "recharge" | "deduct";
   amount: number;
   date: string;
 };
 
-let transactions: Transaction[] = [
-  { id: "1", type: "initialize", amount: 500, date: "2025-02-05 11:20 AM" },
-  { id: "2", type: "recharge", amount: 100, date: "2025-02-09 10:30 AM" },
-];
+const STORAGE_KEY = "transactions_store";
 
-let balance = 600; // Initial balance (500 + 100)
-
-// Get all transactions
-export function getTransactions(): Transaction[] {
-  return [...transactions];
+// Load transactions
+export async function getTransactions(): Promise<Transaction[]> {
+  const data = await AsyncStorage.getItem(STORAGE_KEY);
+  return data ? JSON.parse(data) : [];
 }
 
-// Get current balance
-export function getBalance(): number {
-  return balance;
-}
+export async function addTransaction(type: string, amount: number) {
+  console.log("Saving transaction:", type, amount);
 
-// Add a new transaction
-export function addTransaction(type: "initialize" | "recharge" | "deduct", amount: number) {
-  const newTransaction: Transaction = {
+  const existing = await getTransactions();
+  console.log("Existing:", existing);
+
+  const newTransaction = {
     id: Date.now().toString(),
     type,
     amount,
-    date: new Date().toLocaleString("en-US", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    }),
+    date: new Date().toLocaleString(),
   };
 
-  transactions.unshift(newTransaction);
+  const updated = [newTransaction, ...existing];
 
-  // Update balance
-  if (type === "initialize" || type === "recharge") {
-    balance += amount;
-  } else if (type === "deduct") {
-    balance -= amount;
-  }
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+  console.log("Saved:", updated);
 }
 
-// Calculate balance from all transactions
-export function recalculateBalance() {
-  balance = transactions.reduce((total, transaction) => {
-    if (transaction.type === "initialize" || transaction.type === "recharge") {
-      return total + transaction.amount;
-    } else if (transaction.type === "deduct") {
-      return total - transaction.amount;
-    }
-    return total;
-  }, 0);
-  return balance;
+
+export async function clearTransactions() {
+  await AsyncStorage.removeItem(STORAGE_KEY);
+  console.log(" All transactions cleared");
 }

@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import CustomAlert from "./customalert";
 import { initializeCardBLE } from "@/app/bluetooth/manager";
+import { addTransaction } from "./transactionStore";
 
 const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
@@ -18,91 +19,79 @@ export default function InitializeScreen() {
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
-  const handleInitialize = async () => {
-    console.log("🟦 handleInitialize called");
-    
-    if (!amount || parseFloat(amount) <= 0) {
-      console.log("🔴 Invalid amount");
-      setAlertType("error");
-      setAlertTitle("Invalid Amount");
-      setAlertMessage("Please enter a valid amount");
-      setShowAlert(true);
-      return;
-    }
+const handleInitialize = async () => {
+  console.log("🟦 handleInitialize called");
 
-    console.log("🟦 Amount valid, starting BLE init...");
+  const trimmedAmount = amount.trim();
+  setAmount(trimmedAmount);
 
-    try {
-      await initializeCardBLE(amount, async (result) => {
-        console.log("🟦 CALLBACK RECEIVED:", JSON.stringify(result));
+  if (!trimmedAmount || parseFloat(trimmedAmount) <= 0) {
+    setAlertType("error");
+    setAlertTitle("Invalid Amount");
+    setAlertMessage("Please enter a valid amount");
+    setShowAlert(true);
+    return;
+  }
 
-        // CARD ALREADY INITIALIZED
-        if (result.error === "CARD_ALREADY_INITIALIZED") {
-          console.log("🔴 Showing already initialized alert");
-          setAlertType("error");
-          setAlertTitle("Already Initialized");
-          setAlertMessage(`This card is already initialized with ₹${result.balance || 0}. Cannot initialize again.`);
-          setShowAlert(true);
-          return;
-        }
+  try {
+    await initializeCardBLE(trimmedAmount, async (result) => {
+      console.log("CALLBACK RECEIVED:", JSON.stringify(result));
 
-        // OTHER ERRORS
-        if (result.error) {
-          console.log("🔴 Showing error alert:", result.error);
-          setAlertType("error");
-          setAlertTitle("Error");
-          setAlertMessage(result.error);
-          setShowAlert(true);
-          return;
-        }
+     
+      if (result.error === "CARD_ALREADY_INITIALIZED") {
+        setAlertType("error");
+        setAlertTitle("Card Already Initialized");
+        setAlertMessage(
+          `This card already has ₹${result.balance || 0}. Recharge instead.`
+        );
+        setShowAlert(true);
+        return;
+      }
 
-        // SUCCESS
-        if (result.success) {
-          console.log("🟢 Success! Calling backend...");
-          try {
-            const url = `${API_BASE}/machine/recharge/${machineId}/testUser`;
+      
+      if (result.error === "NO_CARD") {
+        setAlertType("error");
+        setAlertTitle("No Card Detected");
+        setAlertMessage("Please tap a card on the reader.");
+        setShowAlert(true);
+        return;
+      }
 
-            const response = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                machine_id: machineId,
-                recharge_amount: amount
-              }),
-            });
 
-            console.log("🟢 Backend response:", response.status);
+      if (result.error) {
+        setAlertType("error");
+        setAlertTitle("Initialization Failed");
+        setAlertMessage("Please try again.");
+        setShowAlert(true);
+        return;
+      }
 
-            setAlertType("success");
-            setAlertTitle("Success!");
-            setAlertMessage(`Card initialized with ₹${amount}`);
-            setShowAlert(true);
+      // ----- SUCCESS -----
+      if (result.success) {
+        await addTransaction("initialize", parseFloat(trimmedAmount));
 
-          } catch (apiError) {
-            console.log("🔴 Backend error:", apiError);
-            setAlertType("error");
-            setAlertTitle("Backend Failed");
-            setAlertMessage("Card initialized but server update failed");
-            setShowAlert(true);
-          }
-        }
-      });
+        setAlertType("success");
+        setAlertTitle("Card Initialized");
+        setAlertMessage(`Card initialized with ₹${trimmedAmount}`);
+        setShowAlert(true);
+      }
+    });
 
-      console.log("🟦 initializeCardBLE call completed");
+  } catch (err) {
+    console.log("Initialization error:", err);
 
-    } catch (err) {
-      console.log("🔴 Outer error:", err);
-      setAlertType("error");
-      setAlertTitle("Failed");
-      setAlertMessage("Initialization failed");
-      setShowAlert(true);
-    }
-  };
+    setAlertType("error");
+    setAlertTitle("Connection Error");
+    setAlertMessage("Device communication failed.");
+    setShowAlert(true);
+  }
+};
+
 
   const handleAlertClose = () => {
     setShowAlert(false);
     if (alertType === "success") {
-      setAmount("");
+      setAmount(""); 
       router.back();
     }
   };
@@ -123,18 +112,23 @@ export default function InitializeScreen() {
 
           <View style={styles.inputContainer}>
             <Text style={{ fontSize: 24, color: "#F2CB07", fontWeight: "700" }}>₹</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter amount"
-              placeholderTextColor="rgba(255,255,255,0.5)"
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={setAmount}
-            />
+           <TextInput
+  style={styles.input}
+  placeholder="Enter amount"
+  placeholderTextColor="rgba(255,255,255,0.5)"
+  keyboardType="numeric"
+  value={amount}
+  onChangeText={(text) => {
+    const cleaned = text.replace(/[^0-9]/g, ""); // numbers only
+    setAmount(cleaned);
+  }}
+  maxLength={6}
+/>
+
           </View>
 
           <TouchableOpacity style={styles.button} onPress={handleInitialize}>
-            <Text style={styles.buttonText}>Initialize Amount</Text>
+            <Text style={styles.buttonText}>Initialize Card</Text>
           </TouchableOpacity>
         </View>
 

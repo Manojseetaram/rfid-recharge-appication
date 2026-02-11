@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState ,useCallback } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -16,6 +16,8 @@ import { scanForDevices } from "@/app/bluetooth/bluetooth";
 import { requestBlePermissions } from "@/app/bluetooth/permissions";
 import { disconnectDevice, getBleManager, setConnectedDevice } from "@/app/bluetooth/manager";
 import CustomAlert from "./customalert";
+import { useFocusEffect } from "@react-navigation/native";
+
 
 const API_BASE =
   "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
@@ -106,11 +108,21 @@ console.log(machineNo, machineNo.length);
       console.log("Machine verified:", machineInfo.machine_name);
 
       // Step 2: connect BLE
-      await disconnectDevice();
-      await device.connect();
-      await device.discoverAllServicesAndCharacteristics();
+     await disconnectDevice();
 
-      setConnectedDevice(device);
+await device.connect();
+await device.discoverAllServicesAndCharacteristics();
+
+// ⭐ ADD THIS HERE
+try {
+  await device.requestMTU(185);
+  console.log("MTU increased");
+} catch (e) {
+  console.log("MTU request failed (not critical):", e);
+}
+
+setConnectedDevice(device);
+
 
       router.push({
         pathname: "/home/connect",
@@ -139,14 +151,18 @@ console.log(machineNo, machineNo.length);
     router.replace("/login");
   };
 
-  useEffect(() => {
+useFocusEffect(
+  useCallback(() => {
     startScan();
+
     return () => {
       const bleManager = getBleManager();
       bleManager.stopDeviceScan();
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     };
-  }, []);
+  }, [])
+);
+
 
   return (
     <SafeAreaView style={styles.container}>

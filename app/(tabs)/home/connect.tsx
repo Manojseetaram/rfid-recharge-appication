@@ -30,21 +30,21 @@ export default function CardHomeScreen() {
     }
 
     return () => {
-      removeMonitor();     // Remove subscription
-      disconnectDevice();  // Disconnect when leaving page
+      removeMonitor();     
+      disconnectDevice();  
     };
   }, []);
 
   const handleAlertConfirm = async () => {
     setShowAlert(false);
     await disconnectDevice();
-    router.replace("/home"); // Go back to Home
+    router.replace("/home"); 
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        {/* HEADER */}
+     
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#FFF" />
@@ -60,7 +60,7 @@ export default function CardHomeScreen() {
 
         {/* BOXES */}
         <View style={styles.content}>
-          {/* Initialize Card - Full Width */}
+        
           <TouchableOpacity 
             style={styles.boxFull}
             onPress={() => router.push({
@@ -72,7 +72,7 @@ export default function CardHomeScreen() {
             <Text style={styles.boxText}>Initialize Card</Text>
           </TouchableOpacity>
 
-          {/* Recharge & Balance - Grid Row */}
+         
           <View style={styles.gridRow}>
             <TouchableOpacity 
               style={styles.boxHalf}
@@ -97,7 +97,7 @@ export default function CardHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* History & Device Balance - Grid Row */}
+        
           <View style={styles.gridRow}>
             <TouchableOpacity 
               style={styles.boxHalf}

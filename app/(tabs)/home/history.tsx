@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect , useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { getTransactions } from "./transactionStore";
+import { getTransactions, clearTransactions } from "./transactionStore";
+import { useFocusEffect } from "@react-navigation/native";
 
 type FilterType = "all" | "weekly" | "monthly" | "yearly";
 
@@ -13,18 +14,32 @@ export default function HistoryScreen() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
 
-  useEffect(() => {
-    setTransactions(getTransactions());
-  }, []);
+  // ⭐ FIXED - Reload every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log("🔄 History screen focused - reloading transactions...");
+      const load = async () => {
+        const data = await getTransactions();
+        console.log("📊 History loaded:", data.length, "transactions");
+        console.log("📋 Full data:", JSON.stringify(data, null, 2));
+        setTransactions(data);
+      };
+      load();
+      
+      // ⭐ Return cleanup function (optional but good practice)
+      return () => {
+        console.log("History screen unfocused");
+      };
+    }, []) // Empty dependency array means this runs every focus
+  );
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTransactions(getTransactions());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // const handleClearHistory = async () => {
+  //   console.log("🗑️ Clearing history...");
+  //   await clearTransactions();
+  //   setTransactions([]);
+  //   console.log("✅ History cleared from UI");
+  // };
 
-  // Filter transactions based on selected period
   const getFilteredTransactions = () => {
     const now = new Date();
     
@@ -51,7 +66,6 @@ export default function HistoryScreen() {
     });
   };
 
-  // Calculate total for filtered transactions
   const calculateTotal = () => {
     const filtered = getFilteredTransactions();
     return filtered.reduce((total, transaction) => {
@@ -110,13 +124,19 @@ export default function HistoryScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={28} color="#FFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Transaction History</Text>
-          <View style={{ width: 28 }} />
-        </View>
+       <View style={styles.header}>
+  <TouchableOpacity
+    onPress={() => router.back()}
+    style={{ position: "absolute", left: 0 }}
+  >
+    <Ionicons name="chevron-back" size={28} color="#FFF" />
+  </TouchableOpacity>
+
+  <Text style={styles.headerTitle}>
+    Transaction History
+  </Text>
+</View>
+
 
         {/* Filter Buttons */}
         <ScrollView 
@@ -160,19 +180,22 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#38208C" },
   container: { flex: 1, padding: 20 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
+ header: {
+  height: 50,
+  justifyContent: "center",
+  alignItems: "center",
+  marginBottom: 16,
+},
+
   headerTitle: { 
     fontSize: 20, 
     fontWeight: "600", 
-    color: "#FFF" 
+    color: "#FFF" ,
+    alignItems :"center",
+   justifyContent: "space-between",
+
   },
   
-  // Filter Buttons
   filterContainer: {
     marginBottom: 16,
     paddingBottom:20,
@@ -181,7 +204,6 @@ const styles = StyleSheet.create({
   },
   filterContent: {
     gap: 8,
-    
   },
   filterButton: {
     paddingHorizontal: 20,
@@ -192,7 +214,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(242, 203, 7, 0.3)",
     justifyContent: "center",
     alignItems: "center",
-    
   },
   filterButtonActive: {
     backgroundColor: "#F2CB07",
@@ -207,7 +228,6 @@ const styles = StyleSheet.create({
     color: "#38208C",
   },
 
-  // Total Card
   totalCard: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 16,
@@ -234,7 +254,6 @@ const styles = StyleSheet.create({
     color: "#FF5252",
   },
 
-  // Transaction Cards
   transactionCard: {
     backgroundColor: "rgba(255, 255, 255, 0.15)",
     borderRadius: 14,

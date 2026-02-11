@@ -7,59 +7,64 @@ import { addTransaction } from "./transactionStore";
 import CustomAlert from "./customalert";
 import { rechargeCardBLE } from "@/app/bluetooth/manager";
 
-
 export default function RechargeScreen() {
   const router = useRouter();
   const { deviceName, deviceId } = useLocalSearchParams();
   const [amount, setAmount] = useState("");
   
-  // Alert states
   const [showAlert, setShowAlert] = useState(false);
   const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
-
-const handleRecharge = async () => {
-  if (!amount || parseFloat(amount) <= 0) {
-    setAlertType("error");
-    setAlertTitle("Invalid Amount");
-    setAlertMessage("Please enter a valid amount");
-    setShowAlert(true);
-    return;
-  }
-
-  rechargeCardBLE(amount, (result) => {
-
-    if (result.success) {
-      setAlertType("success");
-      setAlertTitle("Recharge Successful");
-      setAlertMessage(`New balance ₹${result.balance}`);
+  const handleRecharge = async () => {
+   
+    const trimmedAmount = amount.trim();
+    
+    if (!trimmedAmount || parseFloat(trimmedAmount) <= 0) {
+      setAlertType("error");
+      setAlertTitle("Invalid Amount");
+      setAlertMessage("Please enter a valid amount");
       setShowAlert(true);
       return;
     }
 
-    if (result.error === "CARD_NOT_INITIALIZED") {
-      setAlertType("error");
-      setAlertTitle("Card Not Initialized");
-      setAlertMessage("Please initialize this card first");
-      setShowAlert(true);
-      return;
-    }
+    rechargeCardBLE(trimmedAmount, async (result) => {
+      console.log("Recharge result:", result);
 
-    if (result.error) {
-      setAlertType("error");
-      setAlertTitle("Recharge Failed");
-      setAlertMessage(result.error);
-      setShowAlert(true);
-    }
-  });
-};
+      if (result.success) {
+        console.log(" Saving transaction...");
+        await addTransaction("recharge", parseFloat(trimmedAmount));
+        console.log("Transaction saved");
+
+        setAlertType("success");
+        setAlertTitle("Recharge Successful! ");
+        setAlertMessage(`₹${trimmedAmount} added successfully to your card`);
+        setShowAlert(true);
+        return;
+      }
+
+      if (result.error === "NOT_INIT") {
+        setAlertType("error");
+        setAlertTitle("Card Not Initialized");
+        setAlertMessage("Please initialize this card first before recharging");
+        setShowAlert(true);
+        return;
+      }
+
+      if (result.error) {
+        setAlertType("error");
+        setAlertTitle("Recharge Failed");
+        setAlertMessage(result.error);
+        setShowAlert(true);
+      }
+    });
+  };
 
   const handleAlertClose = () => {
     setShowAlert(false);
     if (alertType === "success") {
-      setAmount(""); // Clear input on success
+      setAmount(""); 
       router.back();
     }
   };
@@ -67,7 +72,6 @@ const handleRecharge = async () => {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#FFF" />
@@ -79,7 +83,6 @@ const handleRecharge = async () => {
         <View style={styles.content}>
           <Text style={styles.label}>Enter Recharge Amount</Text>
 
-          {/* AMOUNT INPUT - Centered */}
           <View style={styles.inputContainer}>
             <Text style={styles.rupeeSymbol}>₹</Text>
             <TextInput
@@ -89,16 +92,15 @@ const handleRecharge = async () => {
               keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}
+              maxLength={6} 
             />
           </View>
 
-          {/* SUBMIT BUTTON - PhonePay style arrow */}
           <TouchableOpacity style={styles.submitButton} onPress={handleRecharge}>
             <Ionicons name="arrow-forward" size={28} color="#38208C" />
           </TouchableOpacity>
         </View>
 
-        {/* Custom Alert */}
         <CustomAlert
           visible={showAlert}
           type={alertType}

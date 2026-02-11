@@ -58,8 +58,8 @@ useEffect(() => {
           {loading ? (
             <>
               <ActivityIndicator size="large" color="#F2CB07" />
-              <Text style={{ color: "#FFF", marginTop: 10 }}>
-                Tap card to read balance...
+              <Text style={{ color: "#FFF", marginTop: 10 , textAlign : "center"}}>
+                Tap card to read balance
               </Text>
             </>
           ) : balance !== null ? (
