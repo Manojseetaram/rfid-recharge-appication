@@ -163,6 +163,8 @@ export default function HistoryScreen() {
 
         {/* Transaction List */}
         <FlatList
+         style={{ flex: 1 }}
+
           data={filteredTransactions}
           keyExtractor={(item) => item.id}
           renderItem={renderTransaction}
@@ -235,6 +237,7 @@ const styles = StyleSheet.create({
     borderColor: "#F2CB07",
     padding: 20,
     marginBottom: 16,
+   
     alignItems: "center",
   },
   totalLabel: {
