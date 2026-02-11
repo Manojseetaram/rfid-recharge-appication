@@ -12,9 +12,11 @@ import {
 
 import CustomAlert from "./customalert"; 
 
+
 export default function CardHomeScreen() {
   const router = useRouter();
-  const { deviceName, deviceId } = useLocalSearchParams();
+ const { deviceName, deviceId, machineId } = useLocalSearchParams();
+
   const [disconnected, setDisconnected] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
 
@@ -63,7 +65,7 @@ export default function CardHomeScreen() {
             style={styles.boxFull}
             onPress={() => router.push({
               pathname: "/home/initialize",
-              params: { deviceName, deviceId }
+              params: { deviceName, deviceId , machineId }
             })}
           >
             <Ionicons name="link" size={40} color="#F2CB07" />
@@ -112,7 +114,7 @@ export default function CardHomeScreen() {
               style={styles.boxHalf}
               onPress={() => router.push({
                 pathname: "/home/devicebalance",
-                params: { deviceName, deviceId }
+                params: { deviceName, deviceId , machineId }
               })}
             >
               <Ionicons name="wallet-outline" size={36} color="#F2CB07" />

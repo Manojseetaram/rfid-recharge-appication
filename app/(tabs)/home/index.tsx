@@ -6,16 +6,19 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-
 import { scanForDevices } from "@/app/bluetooth/bluetooth";
 import { requestBlePermissions } from "@/app/bluetooth/permissions";
 import { disconnectDevice, getBleManager, setConnectedDevice } from "@/app/bluetooth/manager";
 import CustomAlert from "./customalert";
+
+const API_BASE =
+  "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -25,86 +28,116 @@ export default function HomeScreen() {
 
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-const startScan = async () => {
-  const ok = await requestBlePermissions();
-  if (!ok) return;
+  // Scan for BLE devices
+  const startScan = async () => {
+    const ok = await requestBlePermissions();
+    if (!ok) return;
 
-  const bleManager = getBleManager();
-  const state = await bleManager.state();
-  if (state !== "PoweredOn") return;
+    const bleManager = getBleManager();
+    const state = await bleManager.state();
+    if (state !== "PoweredOn") return;
 
-  // Stop any previous scan
-  bleManager.stopDeviceScan();
-  if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
-
-  setScanning(true);
-
-  scanForDevices((device) => {
-    const isOurDevice =
-      device.name?.startsWith("Recharge-") ||
-      device.manufacturerData?.includes("RECHARGE");
-    if (!isOurDevice) return;
-
-    setDevices((prev) => {
-      // Merge new device if not already in list
-      if (prev.some((d) => d.id === device.id)) return prev;
-      return [...prev, device];
-    });
-  });
-
-  scanTimeoutRef.current = setTimeout(() => {
+    // Stop previous scan
     bleManager.stopDeviceScan();
-    setScanning(false);
-  }, 5000);
-};
+    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
 
+    setDevices([]);   // 🔥 clear old devices
+    setScanning(true);
 
+    scanForDevices((device) => {
+      // Only accept devices that start with Recharge-
+      if (!device.name?.startsWith("Recharge-")) return;
 
-
-const connectToDevice = async (device: any) => {
-  try {
-    setScanning(false);
-    console.log("Connecting to", device.name);
-
-    // Disconnect previous device if any
-    await disconnectDevice();
-
-    // Connect new device
-    await device.connect();
-    console.log("Connected to", device.name);
-
-    await device.discoverAllServicesAndCharacteristics();
-    console.log("Services discovered");
-
-    // Save this device globally
-    setConnectedDevice(device);
-
-    router.push({
-      pathname: "/home/connect",
-      params: { deviceName: device.name, deviceId: device.id },
+      setDevices((prev) => {
+        if (prev.some((d) => d.id === device.id)) return prev;
+        return [...prev, device];
+      });
     });
-  } catch (err) {
-    console.log("Connection error:", err);
-  }
-};
 
-
-  const handleLogout = () => {
-    setShowLogoutAlert(true);
+    scanTimeoutRef.current = setTimeout(() => {
+      bleManager.stopDeviceScan();
+      setScanning(false);
+    }, 5000);
   };
 
+  // Check machine in backend
+  const fetchMachineInfo = async (machineNo: string) => {
+    try {
+      const url = `${API_BASE}/machine/FetchConnectedMachines/${machineNo}`;
+      console.log("Checking machine:", url );
+
+      const res = await fetch(url);
+      const json = await res.json();
+
+      console.log("Machine API response:", json);
+
+      if (json.status === "success") return json.data;
+    } catch (err) {
+      console.log("Machine check error:", err);
+    }
+    return null;
+  };
+
+  // Connect device
+  const connectToDevice = async (device: any) => {
+    try {
+      const bleManager = getBleManager();
+      bleManager.stopDeviceScan(); // 🔥 stop scan before connect
+      setScanning(false);
+
+      if (!device.name?.startsWith("Recharge-")) {
+        Alert.alert("Invalid device");
+        return;
+      }
+
+      const machineNo = device.name.replace("Recharge-", "").trim();
+console.log("MachineNo extracted:", machineNo);
+
+console.log(machineNo, machineNo.length);
+
+      // Step 1: verify machine from server
+      const machineInfo = await fetchMachineInfo(machineNo);
+
+      if (!machineInfo) {
+        Alert.alert("Machine not registered in server");
+        return;
+      }
+
+      console.log("Machine verified:", machineInfo.machine_name);
+
+      // Step 2: connect BLE
+      await disconnectDevice();
+      await device.connect();
+      await device.discoverAllServicesAndCharacteristics();
+
+      setConnectedDevice(device);
+
+      router.push({
+        pathname: "/home/connect",
+        params: {
+          deviceName: machineInfo.machine_name,
+          deviceId: device.id,
+          machineNo: machineInfo.machine_no,
+          machineId: machineInfo.machine_id,
+        },
+      });
+
+    } catch (err) {
+      console.log("Connection error:", err);
+      Alert.alert("Connection failed");
+    }
+  };
+
+  const handleLogout = () => setShowLogoutAlert(true);
+
   const confirmLogout = async () => {
-  // Disconnect BLE device first
-  await disconnectDevice();
+    await disconnectDevice();
+    await AsyncStorage.removeItem("is_logged_in");
+    await AsyncStorage.removeItem("user_email");
 
-  // Clear local storage
-  await AsyncStorage.removeItem("is_logged_in");
-  await AsyncStorage.removeItem("user_email");
-  
-  setShowLogoutAlert(false);
-  router.replace("/login");
-};
-
+    setShowLogoutAlert(false);
+    router.replace("/login");
+  };
 
   useEffect(() => {
     startScan();
@@ -125,7 +158,7 @@ const connectToDevice = async (device: any) => {
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity onPress={startScan} disabled={scanning} style={styles.iconButton}>
+          <TouchableOpacity onPress={startScan} disabled={scanning}>
             <Ionicons
               name={scanning ? "refresh-circle" : "refresh"}
               size={26}
@@ -133,8 +166,7 @@ const connectToDevice = async (device: any) => {
             />
           </TouchableOpacity>
 
-          {/* LOGOUT BUTTON */}
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+          <TouchableOpacity onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={26} color="#FF5252" />
           </TouchableOpacity>
         </View>
@@ -145,16 +177,9 @@ const connectToDevice = async (device: any) => {
         data={devices}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ gap: 12 }}
-        ListEmptyComponent={
-          !scanning ? (
-            <Text style={{ color: "#fff", textAlign: "center", marginTop: 40 }}>
-              No devices found
-            </Text>
-          ) : null
-        }
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>{item.name || "Unknown Device"}</Text>
+            <Text style={styles.cardTitle}>{item.name}</Text>
             <Text style={styles.status}>{item.id}</Text>
 
             <TouchableOpacity
@@ -167,7 +192,6 @@ const connectToDevice = async (device: any) => {
         )}
       />
 
-      {/* Logout Confirmation Alert */}
       <CustomAlert
         visible={showLogoutAlert}
         type="confirm"
@@ -182,46 +206,15 @@ const connectToDevice = async (device: any) => {
   );
 }
 
-/* ---------------- STYLES ---------------- */
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#38208C", padding: 20 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  headerTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "600" },
-  iconButton: {
-    padding: 4,
-  },
-  logoutButton: {
-    padding: 4,
-  },
+  header: { flexDirection: "row", justifyContent: "space-between", marginBottom: 16 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerRight: { flexDirection: "row", gap: 12 },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
   card: { backgroundColor: "#2D1873", borderRadius: 14, padding: 20 },
-  cardTitle: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  status: { color: "#FFFFFF", marginBottom: 20, fontSize: 12, opacity: 0.8 },
-  button: {
-    backgroundColor: "#F2CB07",
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
+  cardTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
+  status: { color: "#fff", marginBottom: 20, fontSize: 12, opacity: 0.8 },
+  button: { backgroundColor: "#F2CB07", padding: 12, borderRadius: 10, alignItems: "center" },
   buttonText: { color: "#1A1426", fontSize: 16, fontWeight: "600" },
 });

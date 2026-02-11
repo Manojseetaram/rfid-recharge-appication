@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
-
+import { Buffer } from "buffer";
+global.Buffer = Buffer;
 export default function HomeLayout() {
   return (
     <Stack

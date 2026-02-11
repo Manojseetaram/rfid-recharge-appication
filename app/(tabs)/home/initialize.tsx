@@ -5,11 +5,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { addTransaction } from "./transactionStore";
 import CustomAlert from "./customalert";
+import { initializeCardBLE } from "@/app/bluetooth/manager";
 
-
+const API_BASE =
+  "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 export default function InitializeScreen() {
   const router = useRouter();
-  const { deviceName, deviceId } = useLocalSearchParams();
+  const { deviceName, deviceId , machineId } = useLocalSearchParams();
   const [amount, setAmount] = useState("");
   
   // Alert states
@@ -18,24 +20,47 @@ export default function InitializeScreen() {
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
-  const handleInitialize = () => {
-    if (!amount || parseFloat(amount) <= 0) {
-      setAlertType("error");
-      setAlertTitle("Invalid Amount");
-      setAlertMessage("Please enter a valid amount");
-      setShowAlert(true);
-      return;
-    }
 
-    // ✅ Add transaction to store
-    addTransaction("initialize", parseFloat(amount));
 
-    // Show success alert
+const handleInitialize = async () => {
+  if (!amount || parseFloat(amount) <= 0) {
+    setAlertType("error");
+    setAlertTitle("Invalid Amount");
+    setAlertMessage("Please enter a valid amount");
+    setShowAlert(true);
+    return;
+  }
+
+  try {
+    // Step 1: send command to ESP32
+    await initializeCardBLE(amount);
+
+    // Step 2: call backend to deduct machine balance
+    const url = `${API_BASE}/machine/recharge/${machineId}/testUser`;
+
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        machine_id: machineId,
+        recharge_amount: amount
+      }),
+    });
+
     setAlertType("success");
     setAlertTitle("Success!");
     setAlertMessage(`Card initialized with ₹${amount}`);
     setShowAlert(true);
-  };
+
+  } catch (err) {
+    console.log(err);
+    setAlertType("error");
+    setAlertTitle("Failed");
+    setAlertMessage("Initialization failed");
+    setShowAlert(true);
+  }
+};
+
 
   const handleAlertClose = () => {
     setShowAlert(false);

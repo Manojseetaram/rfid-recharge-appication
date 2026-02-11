@@ -1,64 +1,74 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { getBalance } from "./transactionStore";  // ← Import here
+
+import { readCardBalanceBLE } from "@/app/bluetooth/manager";
 
 export default function BalanceScreen() {
   const router = useRouter();
-  const { deviceName, deviceId } = useLocalSearchParams();
-  const [balance, setBalance] = useState<number>(0);
+  const { deviceName } = useLocalSearchParams();
 
-  const fetchBalance = () => {
-    const currentBalance = getBalance();
-    setBalance(currentBalance);
-  };
+  const [balance, setBalance] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchBalance();
-  }, []);
+const readBalance = async () => {
+  setBalance(0);
 
-  // Auto-refresh balance every second
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBalance(getBalance());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  try {
+    await readCardBalanceBLE((value) => {
+      setBalance(value);
+    });
+  } catch (err) {
+    console.log(err);
+  }
+};
 
-  const refreshBalance = () => {
-    fetchBalance();
-  };
+useEffect(() => {
+  readBalance();
+}, []);
+
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+
         {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#FFF" />
           </TouchableOpacity>
+
           <Text style={styles.headerTitle}>Card Balance</Text>
-          <TouchableOpacity onPress={refreshBalance}>
+
+          <TouchableOpacity onPress={readBalance}>
             <Ionicons name="refresh" size={26} color="#F2CB07" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
-          {/* BALANCE CARD */}
-          <View style={styles.balanceCard}>
-            <Ionicons name="wallet" size={60} color="#F2CB07" />
-            
-            <Text style={styles.balanceLabel}>Available Balance</Text>
-            
-            <View style={styles.balanceAmount}>
-              <Text style={{ fontSize: 40, color: "#FFF", fontWeight: "700" }}>₹</Text>
-              <Text style={styles.balanceText}>{balance}</Text>
-            </View>
+          {loading ? (
+            <>
+              <ActivityIndicator size="large" color="#F2CB07" />
+              <Text style={{ color: "#FFF", marginTop: 10 }}>
+                Tap card to read balance...
+              </Text>
+            </>
+          ) : balance !== null ? (
+            <View style={styles.balanceCard}>
+              <Ionicons name="wallet" size={60} color="#F2CB07" />
 
-            <Text style={styles.deviceInfo}>{deviceName}</Text>
-          </View>
+              <Text style={styles.balanceLabel}>Available Balance</Text>
+
+              <View style={styles.balanceAmount}>
+                <Text style={{ fontSize: 40, color: "#FFF", fontWeight: "700" }}>₹</Text>
+                <Text style={styles.balanceText}>{balance}</Text>
+              </View>
+
+              <Text style={styles.deviceInfo}>{deviceName}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </SafeAreaView>
