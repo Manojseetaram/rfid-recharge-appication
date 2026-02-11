@@ -8,51 +8,197 @@ let disconnectSubscription: any = null;
 
 const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
 const CHARACTERISTIC_UUID = "abcd1234-1234-1234-1234-abcdef123456";
+let balanceMonitor: any = null;
+
 export async function readCardBalanceBLE(onBalance: (balance: number) => void) {
   if (!connectedDevice) throw new Error("No device connected");
 
-  // send READ command
-  await connectedDevice.writeCharacteristicWithResponseForService(
-    SERVICE_UUID,
-    CHARACTERISTIC_UUID,
-    Buffer.from("READ").toString("base64")
-  );
+  try {
+    let received = false;
 
-  // listen for response
-  connectedDevice.monitorCharacteristicForService(
-    SERVICE_UUID,
-    CHARACTERISTIC_UUID,
-    (error, characteristic) => {
-      if (error) {
-        console.log("Monitor error:", error);
-        return;
-      }
+    const monitor = connectedDevice.monitorCharacteristicForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      (error, characteristic) => {
+        if (error) {
+          console.log("Monitor error:", error.message);
+          return;
+        }
 
-      if (characteristic?.value) {
+        if (!characteristic?.value) return;
+
         const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
         console.log("ESP32:", msg);
 
-        if (msg.startsWith("BALANCE|")) {
-          const value = parseInt(msg.split("|")[1]);
-          onBalance(value);
+        if (received) return;
+
+        try {
+          const data = JSON.parse(msg);
+
+          if (data.balance !== undefined) {
+            received = true;
+            onBalance(data.balance);
+            // ⭐ Don't remove monitor manually
+          }
+
+          if (data.error) {
+            console.log("ESP Error:", data.error);
+          }
+
+        } catch (e) {
+          console.log("JSON parse error:", e);
         }
       }
-    }
-  );
-}
+    );
 
-export async function initializeCardBLE(amount: string) {
+    // Send READ command
+    const message = JSON.stringify({ command: "READ" });
+
+    await connectedDevice.writeCharacteristicWithResponseForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      Buffer.from(message).toString("base64")
+    );
+
+  } catch (err) {
+    console.log("readCardBalanceBLE error:", err);
+  }
+}
+export async function rechargeCardBLE(
+  amount: string,
+  onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
+) {
   if (!connectedDevice) throw new Error("No device connected");
 
-  const message = `INIT|${amount}`;
+  let responseReceived = false;
 
-  await connectedDevice.writeCharacteristicWithResponseForService(
-    SERVICE_UUID,
-    CHARACTERISTIC_UUID,
-    Buffer.from(message).toString("base64")
-  );
+  try {
+    connectedDevice.monitorCharacteristicForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      (error, characteristic) => {
+        if (error) return;
+        if (!characteristic?.value) return;
+
+        const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
+        console.log("ESP32:", msg);
+
+        if (responseReceived) return;
+
+        try {
+          const data = JSON.parse(msg);
+
+          if (data.status === "OK") {
+            responseReceived = true;
+            onResult({ success: true, balance: data.balance });
+          }
+          else if (data.error === "NOT_INITIALIZED") {
+            responseReceived = true;
+            onResult({ error: "CARD_NOT_INITIALIZED" });
+          }
+          else if (data.error) {
+            responseReceived = true;
+            onResult({ error: data.error });
+          }
+
+        } catch {}
+      }
+    );
+
+    const message = JSON.stringify({
+      command: "RECHARGE",
+      amount: parseInt(amount)
+    });
+
+    await connectedDevice.writeCharacteristicWithResponseForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      Buffer.from(message).toString("base64")
+    );
+
+  } catch (err) {
+    console.log(err);
+  }
 }
 
+export async function initializeCardBLE(
+  amount: string,
+  onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
+) {
+  console.log("🔵 initializeCardBLE started");
+  
+  if (!connectedDevice) {
+    throw new Error("No device connected");
+  }
+
+  let responseReceived = false;
+
+  try {
+    const monitor = connectedDevice.monitorCharacteristicForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      (error, characteristic) => {
+        if (error) {
+          console.log("🔴 Monitor error:", error.message);
+          return;
+        }
+
+        if (!characteristic?.value) return;
+
+        const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
+        console.log("📩 ESP32:", msg);
+
+        if (responseReceived) return;
+
+        try {
+          const data = JSON.parse(msg);
+
+          // ⭐ Handle new shorter status codes
+          if (data.status === "OK") {
+            responseReceived = true;
+            console.log("✅ SUCCESS");
+            onResult({ success: true, balance: data.balance });
+          } 
+          else if (data.error === "ALREADY_INIT") {
+            responseReceived = true;
+            console.log("⚠️ ALREADY INITIALIZED");
+            onResult({
+              error: "CARD_ALREADY_INITIALIZED",  // ⭐ Convert back to full name for UI
+              balance: data.balance,
+            });
+          } 
+          else if (data.error) {
+            responseReceived = true;
+            console.log("❌ ERROR:", data.error);
+            onResult({ error: data.error });
+          }
+
+        } catch (e) {
+          console.log("🔴 JSON parse error:", e);
+        }
+      }
+    );
+
+    const message = JSON.stringify({
+      command: "INIT",
+      amount: parseInt(amount)
+    });
+
+    console.log("📤 Sending INIT command");
+
+    await connectedDevice.writeCharacteristicWithResponseForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      Buffer.from(message).toString("base64")
+    );
+
+  } catch (err) {
+    console.log("🔴 Error:", err);
+    if (!responseReceived) {
+      onResult({ error: "COMMUNICATION_FAILED" });
+    }
+  }
+}
 export function getBleManager() {
   if (!manager) {
     manager = new BleManager();

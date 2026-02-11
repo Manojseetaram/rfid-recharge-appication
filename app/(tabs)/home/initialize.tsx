@@ -3,69 +3,106 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { addTransaction } from "./transactionStore";
 import CustomAlert from "./customalert";
 import { initializeCardBLE } from "@/app/bluetooth/manager";
 
-const API_BASE =
-  "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
+const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
+
 export default function InitializeScreen() {
   const router = useRouter();
-  const { deviceName, deviceId , machineId } = useLocalSearchParams();
+  const { deviceName, deviceId, machineId } = useLocalSearchParams();
   const [amount, setAmount] = useState("");
   
-  // Alert states
   const [showAlert, setShowAlert] = useState(false);
   const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
+  const handleInitialize = async () => {
+    console.log("🟦 handleInitialize called");
+    
+    if (!amount || parseFloat(amount) <= 0) {
+      console.log("🔴 Invalid amount");
+      setAlertType("error");
+      setAlertTitle("Invalid Amount");
+      setAlertMessage("Please enter a valid amount");
+      setShowAlert(true);
+      return;
+    }
 
+    console.log("🟦 Amount valid, starting BLE init...");
 
-const handleInitialize = async () => {
-  if (!amount || parseFloat(amount) <= 0) {
-    setAlertType("error");
-    setAlertTitle("Invalid Amount");
-    setAlertMessage("Please enter a valid amount");
-    setShowAlert(true);
-    return;
-  }
+    try {
+      await initializeCardBLE(amount, async (result) => {
+        console.log("🟦 CALLBACK RECEIVED:", JSON.stringify(result));
 
-  try {
-    // Step 1: send command to ESP32
-    await initializeCardBLE(amount);
+        // CARD ALREADY INITIALIZED
+        if (result.error === "CARD_ALREADY_INITIALIZED") {
+          console.log("🔴 Showing already initialized alert");
+          setAlertType("error");
+          setAlertTitle("Already Initialized");
+          setAlertMessage(`This card is already initialized with ₹${result.balance || 0}. Cannot initialize again.`);
+          setShowAlert(true);
+          return;
+        }
 
-    // Step 2: call backend to deduct machine balance
-    const url = `${API_BASE}/machine/recharge/${machineId}/testUser`;
+        // OTHER ERRORS
+        if (result.error) {
+          console.log("🔴 Showing error alert:", result.error);
+          setAlertType("error");
+          setAlertTitle("Error");
+          setAlertMessage(result.error);
+          setShowAlert(true);
+          return;
+        }
 
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        machine_id: machineId,
-        recharge_amount: amount
-      }),
-    });
+        // SUCCESS
+        if (result.success) {
+          console.log("🟢 Success! Calling backend...");
+          try {
+            const url = `${API_BASE}/machine/recharge/${machineId}/testUser`;
 
-    setAlertType("success");
-    setAlertTitle("Success!");
-    setAlertMessage(`Card initialized with ₹${amount}`);
-    setShowAlert(true);
+            const response = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                machine_id: machineId,
+                recharge_amount: amount
+              }),
+            });
 
-  } catch (err) {
-    console.log(err);
-    setAlertType("error");
-    setAlertTitle("Failed");
-    setAlertMessage("Initialization failed");
-    setShowAlert(true);
-  }
-};
+            console.log("🟢 Backend response:", response.status);
 
+            setAlertType("success");
+            setAlertTitle("Success!");
+            setAlertMessage(`Card initialized with ₹${amount}`);
+            setShowAlert(true);
+
+          } catch (apiError) {
+            console.log("🔴 Backend error:", apiError);
+            setAlertType("error");
+            setAlertTitle("Backend Failed");
+            setAlertMessage("Card initialized but server update failed");
+            setShowAlert(true);
+          }
+        }
+      });
+
+      console.log("🟦 initializeCardBLE call completed");
+
+    } catch (err) {
+      console.log("🔴 Outer error:", err);
+      setAlertType("error");
+      setAlertTitle("Failed");
+      setAlertMessage("Initialization failed");
+      setShowAlert(true);
+    }
+  };
 
   const handleAlertClose = () => {
     setShowAlert(false);
     if (alertType === "success") {
-      setAmount(""); // Clear input on success
+      setAmount("");
       router.back();
     }
   };
@@ -73,7 +110,6 @@ const handleInitialize = async () => {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#FFF" />
@@ -85,7 +121,6 @@ const handleInitialize = async () => {
         <View style={styles.content}>
           <Text style={styles.label}>Enter Initialize Amount</Text>
 
-          {/* AMOUNT INPUT */}
           <View style={styles.inputContainer}>
             <Text style={{ fontSize: 24, color: "#F2CB07", fontWeight: "700" }}>₹</Text>
             <TextInput
@@ -98,13 +133,11 @@ const handleInitialize = async () => {
             />
           </View>
 
-          {/* INITIALIZE BUTTON */}
           <TouchableOpacity style={styles.button} onPress={handleInitialize}>
             <Text style={styles.buttonText}>Initialize Amount</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Custom Alert */}
         <CustomAlert
           visible={showAlert}
           type={alertType}

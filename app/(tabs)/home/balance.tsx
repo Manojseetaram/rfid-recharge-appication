@@ -14,20 +14,27 @@ export default function BalanceScreen() {
   const [loading, setLoading] = useState(false);
 
 const readBalance = async () => {
-  setBalance(0);
+  setLoading(true);
 
   try {
     await readCardBalanceBLE((value) => {
       setBalance(value);
+      setLoading(false);
     });
   } catch (err) {
     console.log(err);
+    setLoading(false);
   }
 };
 
+
 useEffect(() => {
-  readBalance();
+  const timer = setTimeout(() => {
+    readBalance();
+  }, 300);
+  return () => clearTimeout(timer);
 }, []);
+
 
 
   return (

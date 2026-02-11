@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { addTransaction } from "./transactionStore";
 import CustomAlert from "./customalert";
+import { rechargeCardBLE } from "@/app/bluetooth/manager";
 
 
 export default function RechargeScreen() {
@@ -18,24 +19,42 @@ export default function RechargeScreen() {
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
-  const handleRecharge = () => {
-    if (!amount || parseFloat(amount) <= 0) {
-      setAlertType("error");
-      setAlertTitle("Invalid Amount");
-      setAlertMessage("Please enter a valid amount");
+
+const handleRecharge = async () => {
+  if (!amount || parseFloat(amount) <= 0) {
+    setAlertType("error");
+    setAlertTitle("Invalid Amount");
+    setAlertMessage("Please enter a valid amount");
+    setShowAlert(true);
+    return;
+  }
+
+  rechargeCardBLE(amount, (result) => {
+
+    if (result.success) {
+      setAlertType("success");
+      setAlertTitle("Recharge Successful");
+      setAlertMessage(`New balance ₹${result.balance}`);
       setShowAlert(true);
       return;
     }
 
-    // ✅ Add transaction to store
-    addTransaction("recharge", parseFloat(amount));
+    if (result.error === "CARD_NOT_INITIALIZED") {
+      setAlertType("error");
+      setAlertTitle("Card Not Initialized");
+      setAlertMessage("Please initialize this card first");
+      setShowAlert(true);
+      return;
+    }
 
-    // Show success alert
-    setAlertType("success");
-    setAlertTitle("Success!");
-    setAlertMessage(`Card recharged with ₹${amount}`);
-    setShowAlert(true);
-  };
+    if (result.error) {
+      setAlertType("error");
+      setAlertTitle("Recharge Failed");
+      setAlertMessage(result.error);
+      setShowAlert(true);
+    }
+  });
+};
 
   const handleAlertClose = () => {
     setShowAlert(false);
