@@ -28,27 +28,32 @@ export default function LoginScreen() {
   const [showContactAlert, setShowContactAlert] = useState(false);
 
 const handleLogin = async () => {
-  if (!email || !password) {
+  if (!email.trim() || !password.trim()) {
     setShowAlert(true);
     return;
   }
 
   try {
-    const result = await loginUser(email.trim(), password);
+    const result = await loginUser(email.trim(), password.trim());
 
-    // 🔐 Save auth data
-    await AsyncStorage.setItem("is_logged_in", "true");
-    await AsyncStorage.setItem("user_email", email.trim());
-
-    if (result.token) {
-      await AsyncStorage.setItem("auth_token", result.token);
+    // 🔐 Validate token exists
+    if (!result?.token) {
+      throw new Error("Token not received");
     }
 
-    router.replace("/(tabs)/home");
-  } catch (error: any) {
-    console.log("Login error:", error.message);
+    // ✅ Save JWT Token
+    await AsyncStorage.multiSet([
+      ["auth_token", result.token],
+      ["is_logged_in", "true"],
+      ["user_email", email.trim()],
+    ]);
 
-    // You can reuse your CustomAlert here
+    console.log("✅ Token saved:", result.token);
+
+    router.replace("/(tabs)/home");
+
+  } catch (error: any) {
+    console.log("❌ Login error:", error.message);
     setShowAlert(true);
   }
 };
