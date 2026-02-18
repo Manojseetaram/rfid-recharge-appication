@@ -14,7 +14,7 @@
     },
     "android": {
       "permissions": [
-         "BLUETOOTH",
+        "BLUETOOTH",
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
@@ -48,7 +48,8 @@
           }
         }
       ],
-      "react-native-ble-plx"
+      "react-native-ble-plx",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

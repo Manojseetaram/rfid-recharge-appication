@@ -10,12 +10,13 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CustomAlert from "../(tabs)/home/customalert";
 import { loginUser } from "../api/auth";
 
+import * as SecureStore from "expo-secure-store";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -26,7 +27,6 @@ export default function LoginScreen() {
   // Alert states
   const [showAlert, setShowAlert] = useState(false);
   const [showContactAlert, setShowContactAlert] = useState(false);
-
 const handleLogin = async () => {
   if (!email.trim() || !password.trim()) {
     setShowAlert(true);
@@ -36,27 +36,30 @@ const handleLogin = async () => {
   try {
     const result = await loginUser(email.trim(), password.trim());
 
-    // 🔐 Validate token exists
-    if (!result?.token) {
-      throw new Error("Token not received");
-    }
+   const token = result?.data?.token;
 
-    // ✅ Save JWT Token
-    await AsyncStorage.multiSet([
-      ["auth_token", result.token],
-      ["is_logged_in", "true"],
-      ["user_email", email.trim()],
-    ]);
+if (!token) {
+  throw new Error("Token not received");
+}
 
-    console.log("✅ Token saved:", result.token);
+await SecureStore.setItemAsync("auth_token", token);
+await SecureStore.setItemAsync("is_logged_in", "true");
+
+console.log("✅ Token stored securely");
+
+    // Optional: store login flag
+    await SecureStore.setItemAsync("is_logged_in", "true");
+
+    console.log("✅ Token stored securely");
 
     router.replace("/(tabs)/home");
 
   } catch (error: any) {
-    console.log("❌ Login error:", error.message);
+    console.log("Login error:", error.message);
     setShowAlert(true);
   }
 };
+
 
   const handleForgotPassword = () => {
     setShowContactAlert(true);
