@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "rea
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 
 const API_BASE =
   "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
@@ -22,37 +23,46 @@ export default function DeviceBalanceScreen() {
     fetchBalance();
   }, []);
 
-  const fetchBalance = async () => {
-    setLoading(true);
-    setError(null);
+const fetchBalance = async () => {
+  setLoading(true);
+  setError(null);
 
-    try {
-      if (!machineId) {
-        setError("Machine ID missing");
-        return;
-      }
-
-      const url = `${API_BASE}/machine/fetch-machine-balance/${machineId}`;
-      console.log("Fetching balance:", url);
-
-      const res = await fetch(url);
-      const json = await res.json();
-
-      console.log("Balance response:", json);
-
-      if (json.status === "success" && json.data?.balance !== undefined) {
-        const balanceValue = parseFloat(json.data.balance);
-        setDeviceBalance(isNaN(balanceValue) ? 0 : balanceValue);
-      } else {
-        setError("Failed to fetch balance");
-      }
-    } catch (err) {
-      console.log("Balance error:", err);
-      setError("Server error");
-    } finally {
-      setLoading(false);
+  try {
+    if (!machineId) {
+      setError("Machine ID missing");
+      return;
     }
-  };
+
+ const token = await SecureStore.getItemAsync("auth_token");
+
+    const url = `${API_BASE}/warden/fetchMachineBalance/${machineId}`;
+    console.log("Fetching balance:", url);
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,   // ⭐ REQUIRED
+      },
+    });
+
+    const json = await res.json();
+    console.log("Balance response:", json);
+
+    if (res.ok && json.data?.balance !== undefined) {
+      const balanceValue = parseFloat(json.data.balance);
+      setDeviceBalance(isNaN(balanceValue) ? 0 : balanceValue);
+    } else {
+      setError(json.message || "Failed to fetch balance");
+    }
+  } catch (err) {
+    console.log("Balance error:", err);
+    setError("Server error");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <SafeAreaView style={styles.safe}>

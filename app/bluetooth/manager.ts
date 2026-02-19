@@ -1,6 +1,8 @@
 // app/bluetooth/manager.ts
 import { BleManager, Device } from "react-native-ble-plx";
 import { Buffer } from "buffer";
+import { rechargeMachineRFID } from "@/app/api/machine";
+
 let manager: BleManager | null = null;
 let connectedDevice: Device | null = null;
 let disconnectSubscription: any = null;
@@ -64,172 +66,100 @@ export async function readCardBalanceBLE(onBalance: (balance: number) => void) {
     console.log("readCardBalanceBLE error:", err);
   }
 }
-export async function rechargeCardBLE(
-  amount: string,
-  onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
-) {
-  console.log("🔵 rechargeCardBLE started with amount:", amount);
-  
-  if (!connectedDevice) {
-    throw new Error("No device connected");
-  }
 
-  let responseReceived = false;
 
-  try {
-    const monitor = connectedDevice.monitorCharacteristicForService(
-      SERVICE_UUID,
-      CHARACTERISTIC_UUID,
-      (error, characteristic) => {
-        if (error) {
-          console.log("🔴 Monitor error:", error.message);
-          return;
-        }
 
-        if (!characteristic?.value) return;
-
-        const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
-        console.log("📩 ESP32 Recharge Response:", msg);
-
-        if (responseReceived) return;
-
-        try {
-          const data = JSON.parse(msg);
-          console.log("📦 Parsed recharge data:", JSON.stringify(data));
-
-          // ⭐ SUCCESS - just check for "OK" status
-          if (data.status === "OK") {
-            responseReceived = true;
-            console.log("✅ RECHARGE SUCCESS");
-            onResult({ success: true }); // No balance needed
-          } 
-          // Handle errors
-          else if (data.error) {
-            responseReceived = true;
-            console.log("❌ RECHARGE ERROR:", data.error);
-            onResult({ error: data.error });
-          }
-
-        } catch (e) {
-          console.log("🔴 JSON parse error:", e);
-        }
-      }
-    );
-
-    const message = JSON.stringify({
-      command: "RECHARGE",
-      amount: parseInt(amount)
-    });
-
-    console.log("📤 Sending RECHARGE command:", message);
-
-    await connectedDevice.writeCharacteristicWithResponseForService(
-      SERVICE_UUID,
-      CHARACTERISTIC_UUID,
-      Buffer.from(message).toString("base64")
-    );
-
-  } catch (err) {
-    console.log("🔴 Error:", err);
-    if (!responseReceived) {
-      onResult({ error: "COMMUNICATION_FAILED" });
-    }
-  }
-}
 export async function initializeCardBLE(
   amount: string,
   onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
 ) {
-  console.log("🔵 initializeCardBLE started");
-  
+
   if (!connectedDevice) {
-    throw new Error("No device connected");
+    onResult({ error: "NO_DEVICE" });
+    return;
   }
 
+  const numericAmount = Number(amount);
   let responseReceived = false;
 
   try {
-    const monitor = connectedDevice.monitorCharacteristicForService(
+
+    const subscription = connectedDevice.monitorCharacteristicForService(
       SERVICE_UUID,
       CHARACTERISTIC_UUID,
       (error, characteristic) => {
-        if (error) {
-          console.log("Monitor error:", error.message);
-          return;
-        }
 
-        if (!characteristic?.value) return;
+        if (error || !characteristic?.value || responseReceived) return;
 
         const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
-        console.log(" ESP32:", msg);
-
-        if (responseReceived) return;
 
         try {
+
           const data = JSON.parse(msg);
 
-          // ⭐ Handle new shorter status codes
-          if (data.status === "OK") {
+          if (data.status === "SUCCESS") {
+
             responseReceived = true;
-            console.log(" SUCCESS");
-            onResult({ success: true, balance: data.balance });
-          } 
-         else if (data.error) {
-  responseReceived = true;
-  console.log(" ERROR:", data.error);
+            setTimeout(() => subscription.remove(), 100);
 
-  // Convert ESP errors to UI-friendly errors
-  switch (data.error) {
-    case "NO_CARD":
-      onResult({ error: "NO_CARD_DETECTED" });
-      break;
+            onResult({
+              success: true,
+              balance: data.updated_balance
+            });
 
-    case "ALREADY_INIT":
-      onResult({
-        error: "CARD_ALREADY_INITIALIZED",
-        balance: data.balance,
-      });
-      break;
+          }
+          else if (data.error) {
 
-    case "WRITE_FAIL":
-      onResult({ error: "CARD_WRITE_FAILED" });
-      break;
+            responseReceived = true;
+            setTimeout(() => subscription.remove(), 100);
 
-    case "FORMAT_FAIL":
-      onResult({ error: "CARD_FORMAT_FAILED" });
-      break;
+            switch (data.error) {
 
-    default:
-      onResult({ error: "UNKNOWN_ERROR" });
-  }
-}
+              case "NO_CARD":
+                onResult({ error: "NO_CARD_DETECTED" });
+                break;
 
-        } catch (e) {
-          console.log("🔴 JSON parse error:", e);
-        }
+              case "ALREADY_INIT":
+                onResult({
+                  error: "CARD_ALREADY_INITIALIZED",
+                  balance: data.balance
+                });
+                break;
+
+              case "WRITE_FAIL":
+                onResult({ error: "CARD_WRITE_FAILED" });
+                break;
+
+              case "FORMAT_FAIL":
+                onResult({ error: "CARD_FORMAT_FAILED" });
+                break;
+
+              default:
+                onResult({ error: "UNKNOWN_ERROR" });
+            }
+          }
+
+        } catch {}
       }
     );
-
-    const message = JSON.stringify({
-      command: "INIT",
-      amount: parseInt(amount)
-    });
-
-    console.log("📤 Sending INIT command");
 
     await connectedDevice.writeCharacteristicWithResponseForService(
       SERVICE_UUID,
       CHARACTERISTIC_UUID,
-      Buffer.from(message).toString("base64")
+      Buffer.from(JSON.stringify({
+        command: "INIT",
+        amount: numericAmount
+      })).toString("base64")
     );
 
-  } catch (err) {
-    console.log("🔴 Error:", err);
+  } catch {
+
     if (!responseReceived) {
       onResult({ error: "COMMUNICATION_FAILED" });
     }
   }
 }
+
 export function getBleManager() {
   if (!manager) {
     manager = new BleManager();
@@ -284,5 +214,83 @@ export function removeMonitor() {
   if (disconnectSubscription) {
     disconnectSubscription.remove();
     disconnectSubscription = null;
+  }
+}
+export async function rechargeCardBLE(
+  machineId: string,
+  amount: string,
+  onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
+) {
+
+  if (!connectedDevice) {
+    onResult({ error: "NO_DEVICE" });
+    return;
+  }
+
+  const numericAmount = Number(amount);
+
+  if (isNaN(numericAmount) || numericAmount <= 0) {
+    onResult({ error: "INVALID_AMOUNT" });
+    return;
+  }
+
+  let responseReceived = false;
+
+  try {
+
+    const subscription = connectedDevice.monitorCharacteristicForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      (error, characteristic) => {
+
+        if (error || !characteristic?.value || responseReceived) return;
+
+        const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
+
+        try {
+
+          const data = JSON.parse(msg);
+
+          // 🟢 SUCCESS FROM ESP
+          if (data.status === "SUCCESS") {
+
+            responseReceived = true;
+
+            setTimeout(() => subscription.remove(), 200);
+
+            onResult({
+              success: true,
+              balance: data.updated_balance
+            });
+          }
+
+          // 🔴 ERROR FROM ESP
+          else if (data.error) {
+
+            responseReceived = true;
+
+            setTimeout(() => subscription.remove(), 200);
+
+            onResult({ error: data.error });
+          }
+
+        } catch {}
+      }
+    );
+
+    await connectedDevice.writeCharacteristicWithResponseForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      Buffer.from(JSON.stringify({
+        command: "RECHARGE",
+        amount: numericAmount
+      })).toString("base64")
+    );
+
+  } catch {
+
+    if (!responseReceived) {
+      onResult({ error: "COMMUNICATION_FAILED" });
+    }
   }
 }

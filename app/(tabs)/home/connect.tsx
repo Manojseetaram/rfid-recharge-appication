@@ -78,7 +78,7 @@ export default function CardHomeScreen() {
               style={styles.boxHalf}
               onPress={() => router.push({
                 pathname: "/home/recharge",
-                params: { deviceName, deviceId }
+                params: { deviceName, deviceId ,  machineId,}
               })}
             >
               <Ionicons name="card" size={36} color="#F2CB07" />

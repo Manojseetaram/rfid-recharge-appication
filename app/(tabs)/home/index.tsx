@@ -17,6 +17,7 @@ import { requestBlePermissions } from "@/app/bluetooth/permissions";
 import { disconnectDevice, getBleManager, setConnectedDevice } from "@/app/bluetooth/manager";
 import CustomAlert from "./customalert";
 import { useFocusEffect } from "@react-navigation/native";
+import * as SecureStore from "expo-secure-store";
 
 
 const API_BASE =
@@ -62,23 +63,32 @@ export default function HomeScreen() {
     }, 5000);
   };
 
-  // Check machine in backend
-  const fetchMachineInfo = async (machineNo: string) => {
-    try {
-      const url = `${API_BASE}/machine/FetchConnectedMachines/${machineNo}`;
-      console.log("Checking machine:", url );
+const fetchMachineInfo = async (machineNo: string) => {
+  try {
 
-      const res = await fetch(url);
-      const json = await res.json();
+    const token = await SecureStore.getItemAsync("auth_token");
 
-      console.log("Machine API response:", json);
+    const url = `${API_BASE}/warden/fetchConnectedMachines/${machineNo}`;
+    console.log("Checking machine:", url);
 
-      if (json.status === "success") return json.data;
-    } catch (err) {
-      console.log("Machine check error:", err);
-    }
-    return null;
-  };
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,   // ⭐ REQUIRED
+      },
+    });
+
+    const json = await res.json();
+    console.log("Machine API response:", json);
+
+    if (json.status === "success") return json.data;
+
+  } catch (err) {
+    console.log("Machine check error:", err);
+  }
+  return null;
+};
 
   // Connect device
   const connectToDevice = async (device: any) => {

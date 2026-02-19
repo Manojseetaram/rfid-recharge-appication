@@ -6,10 +6,12 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { addTransaction } from "./transactionStore";
 import CustomAlert from "./customalert";
 import { rechargeCardBLE } from "@/app/bluetooth/manager";
+import { rechargeMachineRFID } from "@/app/api/machine";
 
 export default function RechargeScreen() {
   const router = useRouter();
-  const { deviceName, deviceId } = useLocalSearchParams();
+const { deviceName, deviceId, machineId } = useLocalSearchParams();
+
   const [amount, setAmount] = useState("");
   
   const [showAlert, setShowAlert] = useState(false);
@@ -17,49 +19,73 @@ export default function RechargeScreen() {
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
-  const handleRecharge = async () => {
-   
-    const trimmedAmount = amount.trim();
-    
-    if (!trimmedAmount || parseFloat(trimmedAmount) <= 0) {
+ const handleRecharge = async () => {
+
+  const trimmedAmount = amount.trim();
+
+  if (!trimmedAmount || parseFloat(trimmedAmount) <= 0) {
+    setAlertType("error");
+    setAlertTitle("Invalid Amount");
+    setAlertMessage("Please enter a valid amount");
+    setShowAlert(true);
+    return;
+  }
+
+  rechargeCardBLE(machineId as string, trimmedAmount, async (result) => {
+
+    console.log("BLE RESULT:", result);
+
+    // 🟢 CARD UPDATED SUCCESSFULLY
+    if (result.success) {
+
+      try {
+
+        // ⭐ SERVER UPDATE AFTER BLE SUCCESS
+        await rechargeMachineRFID(
+          machineId as string,
+          parseFloat(trimmedAmount)
+        );
+
+        await addTransaction("recharge", parseFloat(trimmedAmount));
+
+        setAlertType("success");
+        setAlertTitle("Recharge Successful!");
+        setAlertMessage(`₹${trimmedAmount} added successfully to your card`);
+        setShowAlert(true);
+
+      } catch (e) {
+
+        console.log("Server Sync Failed:", e);
+
+        setAlertType("error");
+        setAlertTitle("Server Sync Failed");
+        setAlertMessage("Card updated but server failed. Try again.");
+        setShowAlert(true);
+      }
+
+      return;
+    }
+
+    // 🔴 NOT INITIALIZED
+    if (result.error === "NOT_INIT") {
       setAlertType("error");
-      setAlertTitle("Invalid Amount");
-      setAlertMessage("Please enter a valid amount");
+      setAlertTitle("Card Not Initialized");
+      setAlertMessage("Please initialize this card first");
       setShowAlert(true);
       return;
     }
 
-    rechargeCardBLE(trimmedAmount, async (result) => {
-      console.log("Recharge result:", result);
+    // 🔴 OTHER ERRORS
+    if (result.error) {
+      setAlertType("error");
+      setAlertTitle("Recharge Failed");
+      setAlertMessage(result.error);
+      setShowAlert(true);
+    }
 
-      if (result.success) {
-        console.log(" Saving transaction...");
-        await addTransaction("recharge", parseFloat(trimmedAmount));
-        console.log("Transaction saved");
+  });
+};
 
-        setAlertType("success");
-        setAlertTitle("Recharge Successful! ");
-        setAlertMessage(`₹${trimmedAmount} added successfully to your card`);
-        setShowAlert(true);
-        return;
-      }
-
-      if (result.error === "NOT_INIT") {
-        setAlertType("error");
-        setAlertTitle("Card Not Initialized");
-        setAlertMessage("Please initialize this card first before recharging");
-        setShowAlert(true);
-        return;
-      }
-
-      if (result.error) {
-        setAlertType("error");
-        setAlertTitle("Recharge Failed");
-        setAlertMessage(result.error);
-        setShowAlert(true);
-      }
-    });
-  };
 
   const handleAlertClose = () => {
     setShowAlert(false);

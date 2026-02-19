@@ -34,23 +34,20 @@ const handleLogin = async () => {
   }
 
   try {
+
     const result = await loginUser(email.trim(), password.trim());
+    console.log("LOGIN RESPONSE:", result);
 
-   const token = result?.data?.token;
+    const token = result?.data?.token;   // ⭐ FIXED HERE
 
-if (!token) {
-  throw new Error("Token not received");
-}
+    if (!token) {
+      throw new Error("Token not received");
+    }
 
-await SecureStore.setItemAsync("auth_token", token);
-await SecureStore.setItemAsync("is_logged_in", "true");
-
-console.log("✅ Token stored securely");
-
-    // Optional: store login flag
+    await SecureStore.setItemAsync("auth_token", token);
     await SecureStore.setItemAsync("is_logged_in", "true");
 
-    console.log("✅ Token stored securely");
+    console.log("✅ Token stored:", token);
 
     router.replace("/(tabs)/home");
 
@@ -59,6 +56,7 @@ console.log("✅ Token stored securely");
     setShowAlert(true);
   }
 };
+
 
 
   const handleForgotPassword = () => {
