@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import CustomAlert from "./customalert";
 import { initializeCardBLE } from "@/app/bluetooth/manager";
-import { addTransaction } from "./transactionStore";
+import { initializeMachineRFID } from "@/app/api/initialize";
 
 const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
@@ -19,13 +19,13 @@ export default function InitializeScreen() {
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
+
+
 const handleInitialize = async () => {
-  console.log("🟦 handleInitialize called");
 
   const trimmedAmount = amount.trim();
-  setAmount(trimmedAmount);
 
-  if (!trimmedAmount || parseFloat(trimmedAmount) <= 0) {
+  if (!trimmedAmount || Number(trimmedAmount) <= 0) {
     setAlertType("error");
     setAlertTitle("Invalid Amount");
     setAlertMessage("Please enter a valid amount");
@@ -33,59 +33,69 @@ const handleInitialize = async () => {
     return;
   }
 
-  try {
-    await initializeCardBLE(trimmedAmount, async (result) => {
-      console.log("CALLBACK RECEIVED:", JSON.stringify(result));
+  initializeCardBLE(trimmedAmount, async (result) => {
 
-     
-      if (result.error === "CARD_ALREADY_INITIALIZED") {
-        setAlertType("error");
-        setAlertTitle("Card Already Initialized");
-        setAlertMessage(
-          `This card already has ₹${result.balance || 0}. Recharge instead.`
+    console.log("BLE RESULT:", result);
+
+    // ❌ Card already initialized
+    if (result.error === "CARD_ALREADY_INITIALIZED") {
+      setAlertType("error");
+      setAlertTitle("Already Initialized");
+      setAlertMessage(
+        `Card already has ₹${result.balance || 0}`
+      );
+      setShowAlert(true);
+      return;
+    }
+
+    // ❌ No card tapped
+    if (result.error === "NO_CARD_DETECTED") {
+      setAlertType("error");
+      setAlertTitle("No Card");
+      setAlertMessage("Tap card on reader");
+      setShowAlert(true);
+      return;
+    }
+
+    // ❌ ESP Error
+    if (result.error) {
+      setAlertType("error");
+      setAlertTitle("Initialization Failed");
+      setAlertMessage(result.error);
+      setShowAlert(true);
+      return;
+    }
+
+    // ✅ BLE SUCCESS → CALL SERVER
+    if (result.success) {
+
+      try {
+
+        console.log("Sending INIT to backend...");
+
+        await initializeMachineRFID(
+          machineId as string,
+          Number(trimmedAmount)
         );
-        setShowAlert(true);
-        return;
-      }
-
-      
-      if (result.error === "NO_CARD") {
-        setAlertType("error");
-        setAlertTitle("No Card Detected");
-        setAlertMessage("Please tap a card on the reader.");
-        setShowAlert(true);
-        return;
-      }
-
-
-      if (result.error) {
-        setAlertType("error");
-        setAlertTitle("Initialization Failed");
-        setAlertMessage("Please try again.");
-        setShowAlert(true);
-        return;
-      }
-
-      // ----- SUCCESS -----
-      if (result.success) {
-        await addTransaction("initialize", parseFloat(trimmedAmount));
 
         setAlertType("success");
-        setAlertTitle("Card Initialized");
-        setAlertMessage(`Card initialized with ₹${trimmedAmount}`);
+        setAlertTitle("Initialized");
+        setAlertMessage(`₹${trimmedAmount} added to card`);
+        setShowAlert(true);
+
+      } catch (e) {
+
+        console.log("SERVER INIT FAILED:", e);
+
+        setAlertType("error");
+        setAlertTitle("Server Sync Failed");
+        setAlertMessage("Card updated but machine wallet not deducted.");
         setShowAlert(true);
       }
-    });
-
-  } catch (err) {
-    console.log("Initialization error:", err);
-
-    setAlertType("error");
-    setAlertTitle("Connection Error");
-    setAlertMessage("Device communication failed.");
-    setShowAlert(true);
-  }
+    }
+  });
 };
+
 
 
   const handleAlertClose = () => {

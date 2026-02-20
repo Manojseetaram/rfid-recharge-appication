@@ -3,27 +3,35 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { addTransaction } from "./transactionStore";
+
 import CustomAlert from "./customalert";
 import { rechargeCardBLE } from "@/app/bluetooth/manager";
 import { rechargeMachineRFID } from "@/app/api/machine";
 
 export default function RechargeScreen() {
+
   const router = useRouter();
-const { deviceName, deviceId, machineId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+
+  // ✅ FIX 1 — SAFE MACHINE ID
+  const machineId =
+    Array.isArray(params.machineId)
+      ? params.machineId[0]
+      : params.machineId;
 
   const [amount, setAmount] = useState("");
-  
+
   const [showAlert, setShowAlert] = useState(false);
   const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
- const handleRecharge = async () => {
+  
+  
+const handleRecharge = async () => {
+  const cleanAmount = amount.replace(/[^0-9]/g, "");
 
-  const trimmedAmount = amount.trim();
-
-  if (!trimmedAmount || parseFloat(trimmedAmount) <= 0) {
+  if (!cleanAmount || parseInt(cleanAmount) <= 0) {
     setAlertType("error");
     setAlertTitle("Invalid Amount");
     setAlertMessage("Please enter a valid amount");
@@ -31,66 +39,66 @@ const { deviceName, deviceId, machineId } = useLocalSearchParams();
     return;
   }
 
-  rechargeCardBLE(machineId as string, trimmedAmount, async (result) => {
+  const finalAmount = parseInt(cleanAmount);
 
-    console.log("BLE RESULT:", result);
+  rechargeCardBLE(
+    String(machineId),
+    cleanAmount,
+    (result) => {
+      console.log("BLE RESULT:", JSON.stringify(result));
 
-    // 🟢 CARD UPDATED SUCCESSFULLY
-    if (result.success) {
+      if (result.success) {
+        // BLE card updated — now sync server
+        setTimeout(async () => {
+          try {
+            await rechargeMachineRFID(String(machineId), finalAmount);
 
-      try {
+            setAlertType("success");
+            setAlertTitle("Recharge Successful!");
+            setAlertMessage(
+              `₹${finalAmount} added.\nNew Balance: ₹${result.balance ?? "?"}`
+            );
+            setShowAlert(true);
 
-        // ⭐ SERVER UPDATE AFTER BLE SUCCESS
-        await rechargeMachineRFID(
-          machineId as string,
-          parseFloat(trimmedAmount)
-        );
-
-        await addTransaction("recharge", parseFloat(trimmedAmount));
-
-        setAlertType("success");
-        setAlertTitle("Recharge Successful!");
-        setAlertMessage(`₹${trimmedAmount} added successfully to your card`);
-        setShowAlert(true);
-
-      } catch (e) {
-
-        console.log("Server Sync Failed:", e);
-
-        setAlertType("error");
-        setAlertTitle("Server Sync Failed");
-        setAlertMessage("Card updated but server failed. Try again.");
-        setShowAlert(true);
+          } catch (e: any) {
+            console.log("Server sync failed:", e);
+            // Card WAS recharged, server failed — still show partial success
+            setAlertType("error");
+            setAlertTitle("Sync Warning");
+            setAlertMessage(
+              `Card recharged but server update failed.\nPlease contact support.`
+            );
+            setShowAlert(true);
+          }
+        }, 700);
+        return;
       }
 
-      return;
-    }
+      // Handle specific BLE errors
+      const errorMessages: Record<string, { title: string; message: string }> = {
+        NO_DEVICE:           { title: "Not Connected",        message: "No BLE device connected." },
+        BLE_ERROR:           { title: "BLE Error",            message: "Communication error. Try again." },
+        NO_CARD:             { title: "No Card",              message: "Place card on reader and try again." },
+        NOT_INIT:            { title: "Card Not Initialized", message: "Initialize the card first." },
+        COMMUNICATION_FAILED:{ title: "Timeout",              message: "Device did not respond. Try again." },
+        MIN_25_FIRST:        { title: "Minimum ₹25",          message: "First recharge must be at least ₹25." },
+        FAIL:                { title: "Recharge Failed",      message: "Card update failed. Try again." },
+      };
 
-    // 🔴 NOT INITIALIZED
-    if (result.error === "NOT_INIT") {
+      const err = result.error ?? "UNKNOWN";
+      const mapped = errorMessages[err] ?? { title: "Error", message: err };
+
       setAlertType("error");
-      setAlertTitle("Card Not Initialized");
-      setAlertMessage("Please initialize this card first");
-      setShowAlert(true);
-      return;
-    }
-
-    // 🔴 OTHER ERRORS
-    if (result.error) {
-      setAlertType("error");
-      setAlertTitle("Recharge Failed");
-      setAlertMessage(result.error);
+      setAlertTitle(mapped.title);
+      setAlertMessage(mapped.message);
       setShowAlert(true);
     }
-
-  });
+  );
 };
-
-
   const handleAlertClose = () => {
     setShowAlert(false);
     if (alertType === "success") {
-      setAmount(""); 
+      setAmount("");
       router.back();
     }
   };
@@ -98,6 +106,7 @@ const { deviceName, deviceId, machineId } = useLocalSearchParams();
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#FFF" />
@@ -107,24 +116,29 @@ const { deviceName, deviceId, machineId } = useLocalSearchParams();
         </View>
 
         <View style={styles.content}>
+
           <Text style={styles.label}>Enter Recharge Amount</Text>
 
           <View style={styles.inputContainer}>
             <Text style={styles.rupeeSymbol}>₹</Text>
+
+            {/* ✅ FIX 4 — CLEAN INPUT */}
             <TextInput
               style={styles.input}
-              placeholder="0"
-              placeholderTextColor="rgba(255,255,255,0.3)"
               keyboardType="numeric"
               value={amount}
-              onChangeText={setAmount}
-              maxLength={6} 
+              onChangeText={(text) => {
+                const cleaned = text.replace(/[^0-9]/g, "");
+                setAmount(cleaned);
+              }}
+              maxLength={6}
             />
           </View>
 
           <TouchableOpacity style={styles.submitButton} onPress={handleRecharge}>
             <Ionicons name="arrow-forward" size={28} color="#38208C" />
           </TouchableOpacity>
+
         </View>
 
         <CustomAlert
@@ -134,10 +148,12 @@ const { deviceName, deviceId, machineId } = useLocalSearchParams();
           message={alertMessage}
           onConfirm={handleAlertClose}
         />
+
       </View>
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#38208C" },

@@ -3,35 +3,46 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView } from "
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { getTransactions, clearTransactions } from "./transactionStore";
+
 import { useFocusEffect } from "@react-navigation/native";
+import { fetchRechargeHistory } from "@/app/api/history";
 
 type FilterType = "all" | "weekly" | "monthly" | "yearly";
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const { deviceName, deviceId } = useLocalSearchParams();
+  const { deviceName, deviceId , machineId } = useLocalSearchParams();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
 
   // ⭐ FIXED - Reload every time screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      console.log("🔄 History screen focused - reloading transactions...");
-      const load = async () => {
-        const data = await getTransactions();
-        console.log("📊 History loaded:", data.length, "transactions");
-        console.log("📋 Full data:", JSON.stringify(data, null, 2));
-        setTransactions(data);
-      };
-      load();
-      
-      // ⭐ Return cleanup function (optional but good practice)
-      return () => {
-        console.log("History screen unfocused");
-      };
-    }, []) // Empty dependency array means this runs every focus
-  );
+useFocusEffect(
+  useCallback(() => {
+
+    const load = async () => {
+
+      try {
+
+        const data = await fetchRechargeHistory(machineId as string);
+
+        const formatted = data.map((item: any) => ({
+          id: item._id,
+          type: item.type,
+          amount: item.amount,
+          date: new Date(item.created_at).toLocaleString(),
+        }));
+
+        setTransactions(formatted);
+
+      } catch (e) {
+        console.log("History fetch failed:", e);
+      }
+    };
+
+    load();
+
+  }, [])
+);
 
   // const handleClearHistory = async () => {
   //   console.log("🗑️ Clearing history...");
