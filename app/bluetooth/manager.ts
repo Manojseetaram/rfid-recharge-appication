@@ -79,9 +79,7 @@ export async function readCardBalanceBLE(
   }
 }
 
-// ─────────────────────────────────────────────
-// RECHARGE CARD
-// ─────────────────────────────────────────────
+
 export async function rechargeCardBLE(
   machineId: string,
   amount: string,
@@ -247,19 +245,25 @@ export function getConnectedDevice(): Device | null {
 export async function disconnectDevice() {
   if (!connectedDevice) return;
 
-  removeMonitor();
-
   const deviceToDisconnect = connectedDevice;
   connectedDevice = null;
 
-  setTimeout(async () => {
-    try {
-      await deviceToDisconnect.cancelConnection();
-      console.log("Device disconnected:", deviceToDisconnect.name);
-    } catch (err) {
-      console.log("Error disconnecting:", err);
-    }
-  }, 500);
+  try {
+    await deviceToDisconnect.cancelConnection();
+  } catch (e) {
+    console.log("Cancel connection error:", e);
+  }
+
+  // Wait until actually disconnected
+  try {
+    await deviceToDisconnect.isConnected().then(async (connected) => {
+      if (connected) {
+        await new Promise((res) => setTimeout(res, 500));
+      }
+    });
+  } catch (_) {}
+
+  console.log("Fully disconnected");
 }
 
 // ─────────────────────────────────────────────
@@ -284,5 +288,14 @@ export function removeMonitor() {
       disconnectSubscription.remove();
     } catch (_) {}
     disconnectSubscription = null;
+  }
+}
+
+export async function resetBleManager() {
+  if (manager) {
+    try {
+      await manager.destroy();
+    } catch (_) {}
+    manager = null;
   }
 }

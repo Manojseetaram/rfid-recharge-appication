@@ -1,40 +1,31 @@
 import * as SecureStore from "expo-secure-store";
 
-const API_BASE =
-  "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
+const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
-export async function initializeMachineRFID(
-  machineId: string,
-  amount: number
-) {
-
+export async function initializeMachineRFID(machineId: string, amount: number) {
   const token = await SecureStore.getItemAsync("auth_token");
 
-  if (!token) {
-    throw new Error("Token missing");
-  }
+  if (!token) throw new Error("Token missing");
 
-  const response = await fetch(
-    `${API_BASE}/warden/initialize/${machineId}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        initialize_amount: amount,
-      }),
-    }
-  );
+  // Send as STRING — same pattern as recharge which works
+  const payload = { initialize_amount: String(amount) };
 
-  const data = await response.json();
+  console.log("Initialize payload:", JSON.stringify(payload));
 
-  console.log("INIT SERVER:", data);
+  const response = await fetch(`${API_BASE}/warden/initialize/${machineId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
 
-  if (!response.ok) {
-    throw new Error(JSON.stringify(data));
-  }
+  const text = await response.text();
+  console.log("Initialize response:", text);
+  console.log("Initialize status:", response.status);
 
-  return data;
+  if (!response.ok) throw new Error(text);
+
+  return JSON.parse(text);
 }
