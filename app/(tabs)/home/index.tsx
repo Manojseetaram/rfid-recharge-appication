@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+
 
 import { scanForDevices } from "@/app/bluetooth/bluetooth";
 import { requestBlePermissions } from "@/app/bluetooth/permissions";
@@ -153,13 +153,15 @@ setConnectedDevice(device);
   const handleLogout = () => setShowLogoutAlert(true);
 
   const confirmLogout = async () => {
-    await disconnectDevice();
-    await AsyncStorage.removeItem("is_logged_in");
-    await AsyncStorage.removeItem("user_email");
+  await disconnectDevice();
 
-    setShowLogoutAlert(false);
-    router.replace("/login");
-  };
+  // ⭐ ACTUAL LOGOUT
+  await SecureStore.deleteItemAsync("auth_token");
+  await SecureStore.deleteItemAsync("is_logged_in");
+
+  setShowLogoutAlert(false);
+  router.replace("/login");
+};
 
 useFocusEffect(
   useCallback(() => {
