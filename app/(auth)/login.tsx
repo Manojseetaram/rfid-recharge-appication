@@ -79,35 +79,48 @@ export default function LoginScreen() {
     ).start();
   }, []);
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setShowAlert(true);
-      return;
-    }
+const handleLogin = async () => {
+  if (!email.trim() || !password.trim()) {
+    setShowAlert(true);
+    return;
+  }
 
-    Animated.sequence([
-      Animated.spring(buttonScale, { toValue: 0.96, useNativeDriver: true, tension: 300 }),
-      Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, tension: 300 }),
-    ]).start();
+  Animated.sequence([
+    Animated.spring(buttonScale, { toValue: 0.96, useNativeDriver: true, tension: 300 }),
+    Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, tension: 300 }),
+  ]).start();
 
-    setIsLoading(true);
-    try {
-      const result = await loginUser(email.trim(), password.trim());
-      const token = result?.data?.token;
-      if (!token) throw new Error("Token not received");
+  setIsLoading(true);
 
-      await SecureStore.setItemAsync("auth_token", token);
-      await SecureStore.setItemAsync("is_logged_in", "true");
-      console.log("✅ Token stored:", token);
-      router.replace("/(tabs)/home");
-    } catch (error: any) {
-      console.log("Login error:", error.message);
-      setShowAlert(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  try {
+    const result = await loginUser(email.trim(), password.trim());
 
+    // 🟡 LOG THE FULL RESPONSE
+    console.log("LOGIN RESPONSE:", result);
+
+    // 🟢 FIX: token is NOT inside result.data
+    const token =
+      result?.token ||           // if backend returns { token: "..." }
+      result?.data?.token ||     // fallback
+      result?.accessToken ||     // common case
+      result?.jwt;               // another fallback
+
+    if (!token) throw new Error("Token not received from backend");
+
+    // 🛡 Store token securely
+    await SecureStore.setItemAsync("auth_token", token);
+    await SecureStore.setItemAsync("is_logged_in", "true");
+
+    console.log("✅ Token stored:", token);
+
+    router.replace("/(tabs)/home");
+  } catch (error: any) {
+    console.log("❌ Login error:", error.message);
+    setShowAlert(true);
+  } finally {
+    setIsLoading(false);
+  }
+};
   const handleForgotPassword = () => setShowContactAlert(true);
   const handleCallSupport = () => {
     setShowContactAlert(false);

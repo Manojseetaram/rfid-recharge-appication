@@ -230,7 +230,7 @@ const startScan = async () => {
   const fetchMachineInfo = async (machineNo: string) => {
     try {
       const token = await SecureStore.getItemAsync("auth_token");
-      const url = `${API_BASE}/warden/fetchConnectedMachines/${machineNo}`;
+const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
       console.log("Checking machine:", url);
       const res = await fetch(url, {
         method: "GET",
