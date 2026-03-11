@@ -2,17 +2,26 @@ import * as SecureStore from "expo-secure-store";
 
 const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
-export async function initializeMachineRFID(machineId: string, amount: number) {
+export async function initializeMachineRFID(
+  machineId: string,
+  amount: number,
+  cardId: string,
+  usn: string,
+) {
   const token = await SecureStore.getItemAsync("auth_token");
-
   if (!token) throw new Error("Token missing");
 
-  // Send as STRING — same pattern as recharge which works
-  const payload = { initialize_amount: String(amount) };
+  // ✅ Only 3 fields — matches backend reqBody exactly
+  const payload = {
+    card_id: cardId,
+    usn: usn,
+    recharge_amount: String(amount),
+  };
 
   console.log("Initialize payload:", JSON.stringify(payload));
 
-  const response = await fetch(`${API_BASE}/warden/initialize/${machineId}`, {
+  // ✅ machineId interpolated into URL — not literal `:machine_id`
+  const response = await fetch(`${API_BASE}/machine-user/rfid/initiate/${machineId}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

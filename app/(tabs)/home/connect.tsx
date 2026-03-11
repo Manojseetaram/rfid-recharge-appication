@@ -283,6 +283,7 @@ export default function CardHomeScreen() {
                 })
               }
             />
+            
           </View>
 
           {/* Row 3 */}

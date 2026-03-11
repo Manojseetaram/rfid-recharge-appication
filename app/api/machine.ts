@@ -2,11 +2,11 @@ import * as SecureStore from "expo-secure-store";
 
 const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
-// ── Check machine wallet balance before recharge ──
 export async function fetchMachineBalance(machineId: string): Promise<number> {
   const token = await SecureStore.getItemAsync("auth_token");
+console.log("machineId being used for balance check:", String(machineId));
 
-  const response = await fetch(`${API_BASE}/warden/fetchMachineBalance/${machineId}`, {
+  const response = await fetch(`${API_BASE}/machine-user/fetchMachineBalance/${machineId}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -23,14 +23,23 @@ export async function fetchMachineBalance(machineId: string): Promise<number> {
   return isNaN(balance) ? 0 : balance;
 }
 
-// ── Sync recharge to server after BLE success ──
-export async function rechargeMachineRFID(machineId: string, amount: number) {
+
+
+export async function rechargeMachineRFID(
+  machineId: string,
+  amount: number,
+  cardId: string
+) {
   const token = await SecureStore.getItemAsync("auth_token");
 
-  const payload = { recharge_amount: String(amount) };
+  const payload = {
+    recharge_amount: String(amount),
+    card_id: cardId,
+  };
+
   console.log("Recharge payload:", JSON.stringify(payload));
 
-  const response = await fetch(`${API_BASE}/warden/recharge/${machineId}`, {
+  const response = await fetch(`${API_BASE}/machine-user/recharge-rfid/${machineId}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

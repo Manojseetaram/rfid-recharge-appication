@@ -47,7 +47,7 @@ export default function DeviceBalanceScreen() {
     try {
       if (!machineId) { setError("Machine ID missing"); return; }
       const token = await SecureStore.getItemAsync("auth_token");
-      const url = `${API_BASE}/warden/fetchMachineBalance/${machineId}`;
+      const url = `${API_BASE}/machine-user/fetchMachineBalance/${machineId}`;
       console.log("Fetching balance:", url);
       const res = await fetch(url, {
         method: "GET",

@@ -37,7 +37,7 @@ export async function readCardBalanceBLE(
     SERVICE_UUID,
     CHARACTERISTIC_UUID,
     (error, characteristic) => {
-      if (finished) return; // ignore ALL callbacks after first result
+      if (finished) return;
 
       if (error) {
         finished = true;
@@ -49,6 +49,8 @@ export async function readCardBalanceBLE(
 
       try {
         const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
+        console.log("RAW BLE RECHARGE RESPONSE:", msg);  // ← add this
+
         const data = JSON.parse(msg);
 
         if (data.balance !== undefined) {
@@ -79,11 +81,13 @@ export async function readCardBalanceBLE(
   }
 }
 
-
+// ───────────────────────────────────────────── 
+// RECHARGE CARD 
+// ─────────────────────────────────────────────
 export async function rechargeCardBLE(
   machineId: string,
   amount: string,
-  onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
+  onResult: (result: { success?: boolean; error?: string; balance?: number; cardId?: string }) => void
 ) {
   if (!connectedDevice) {
     onResult({ error: "NO_DEVICE" });
@@ -96,7 +100,7 @@ export async function rechargeCardBLE(
     SERVICE_UUID,
     CHARACTERISTIC_UUID,
     (error, characteristic) => {
-      if (finished) return; // ignore ALL callbacks after first result
+      if (finished) return;
 
       if (error) {
         finished = true;
@@ -110,11 +114,15 @@ export async function rechargeCardBLE(
         const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
         const data = JSON.parse(msg);
 
-        if (data.status === "SUCCESS") {
-          finished = true;
-          onResult({ success: true, balance: data.updated_balance });
-          return;
-        }
+       if (data.status === "SUCCESS") {
+  finished = true;
+  onResult({ 
+    success: true, 
+    balance: data.updated_balance,
+    cardId: data.card_id ?? data.cardId ?? data.uid ?? data.rfid_id ?? data.id ?? "",
+  });
+  return;
+}
 
         if (data.error) {
           finished = true;
@@ -145,7 +153,12 @@ export async function rechargeCardBLE(
 // ─────────────────────────────────────────────
 export async function initializeCardBLE(
   amount: string,
-  onResult: (result: { success?: boolean; error?: string; balance?: number }) => void
+  onResult: (result: {
+    success?: boolean;
+    error?: string;
+    balance?: number;
+    cardId?: string;  // ← card UUID from ESP32
+  }) => void
 ) {
   if (!connectedDevice) {
     onResult({ error: "NO_DEVICE" });
@@ -158,7 +171,7 @@ export async function initializeCardBLE(
     SERVICE_UUID,
     CHARACTERISTIC_UUID,
     (error, characteristic) => {
-      if (finished) return; // ignore ALL callbacks after first result
+      if (finished) return;
 
       if (error) {
         finished = true;
@@ -172,9 +185,15 @@ export async function initializeCardBLE(
         const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
         const data = JSON.parse(msg);
 
+        console.log("RAW BLE DATA:", msg); // ← debug: see exactly what ESP32 sends
+
         if (data.status === "SUCCESS") {
           finished = true;
-          onResult({ success: true, balance: data.updated_balance });
+          onResult({
+            success: true,
+            balance: data.updated_balance,
+            cardId: data.card_id,   // ✅ THIS WAS THE BUG — was missing before
+          });
           return;
         }
 
@@ -195,7 +214,8 @@ export async function initializeCardBLE(
               onResult({ error: "CARD_FORMAT_FAILED" });
               break;
             case "MIN_200":
-              onResult({ error: "MINIMUM_200_REQUIRED" });
+            case "MIN_50":
+              onResult({ error: "MINIMUM_REQUIRED" });
               break;
             default:
               onResult({ error: "UNKNOWN_ERROR" });
@@ -254,7 +274,6 @@ export async function disconnectDevice() {
     console.log("Cancel connection error:", e);
   }
 
-  // Wait until actually disconnected
   try {
     await deviceToDisconnect.isConnected().then(async (connected) => {
       if (connected) {

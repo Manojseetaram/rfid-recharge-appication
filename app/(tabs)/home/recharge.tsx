@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import CustomAlert from "./customalert";
 import { rechargeCardBLE } from "@/app/bluetooth/manager";
-import { fetchMachineBalance, rechargeMachineRFID } from "@/app/api/machine";
+import { rechargeMachineRFID } from "@/app/api/machine";
 
 const { width } = Dimensions.get("window");
 
@@ -18,7 +18,7 @@ export default function RechargeScreen() {
   const machineId = Array.isArray(params.machineId) ? params.machineId[0] : params.machineId;
 
   const [amount, setAmount] = useState("");
-  const [isChecking, setIsChecking] = useState(false); // balance check loading state
+  const [isLoading, setIsLoading] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [alertTitle, setAlertTitle] = useState("");
@@ -36,14 +36,18 @@ export default function RechargeScreen() {
     ]).start();
   };
 
+  const showError = (title: string, message: string) => {
+    setAlertType("error");
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setShowAlert(true);
+  };
+
   const handleRecharge = async () => {
     const cleanAmount = amount.replace(/[^0-9]/g, "");
     if (!cleanAmount || parseInt(cleanAmount) <= 0) {
       shake();
-      setAlertType("error");
-      setAlertTitle("Invalid Amount");
-      setAlertMessage("Please enter a valid amount");
-      setShowAlert(true);
+      showError("Invalid Amount", "Please enter a valid amount");
       return;
     }
 
@@ -54,60 +58,40 @@ export default function RechargeScreen() {
       Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, tension: 300 }),
     ]).start();
 
-    // ── STEP 1: Check machine wallet balance BEFORE BLE ──
-    setIsChecking(true);
-    try {
-      const machineBalance = await fetchMachineBalance(String(machineId));
-      console.log(`Machine balance: ₹${machineBalance}, Recharge amount: ₹${finalAmount}`);
+    setIsLoading(true);
 
-      if (machineBalance < finalAmount) {
-        // ❌ NOT ENOUGH BALANCE — block recharge entirely
-        shake();
-        setAlertType("error");
-        setAlertTitle("Insufficient Machine Balance");
-        setAlertMessage(
-          `Machine wallet has only ₹${machineBalance.toFixed(2)}.\nCannot recharge ₹${finalAmount}.`
-        );
-        setShowAlert(true);
-        setIsChecking(false);
-        return;
-      }
-    } catch (e: any) {
-      console.log("Balance check failed:", e);
-      setAlertType("error");
-      setAlertTitle("Balance Check Failed");
-      setAlertMessage("Could not verify machine balance.\nPlease try again.");
-      setShowAlert(true);
-      setIsChecking(false);
-      return;
-    }
-    setIsChecking(false);
-
-    // ── STEP 2: BLE recharge (balance is sufficient) ──
+    // ── BLE recharge ──
     rechargeCardBLE(String(machineId), cleanAmount, (result) => {
       console.log("BLE RESULT:", JSON.stringify(result));
 
       if (result.success) {
-        // ── STEP 3: Sync to server ──
+        // ── Sync to server ──
         setTimeout(async () => {
           try {
-            await rechargeMachineRFID(String(machineId), finalAmount);
+            await rechargeMachineRFID(String(machineId), finalAmount, result.cardId ?? "");
+            setIsLoading(false);
             setAlertType("success");
             setAlertTitle("Recharge Successful!");
             setAlertMessage(`₹${finalAmount} added.\nNew Balance: ₹${result.balance ?? "?"}`);
             setShowAlert(true);
           } catch (e: any) {
+            setIsLoading(false);
             console.log("Server sync failed:", e);
-            setAlertType("error");
-            setAlertTitle("Sync Warning");
-            setAlertMessage("Card recharged but server update failed.\nPlease contact support.");
-            setShowAlert(true);
+            // Parse server error message if available
+            const serverMsg = e?.message ?? "";
+            const isInsufficientBalance = serverMsg.toLowerCase().includes("insufficient") || serverMsg.toLowerCase().includes("balance");
+            if (isInsufficientBalance) {
+              showError("Insufficient Machine Balance", "Machine does not have enough balance.\nPlease contact admin.");
+            } else {
+              showError("Sync Warning", "Card recharged but server update failed.\nPlease contact support.");
+            }
           }
         }, 700);
         return;
       }
 
-      // BLE errors
+      // BLE failed
+      setIsLoading(false);
       const errorMessages: Record<string, { title: string; message: string }> = {
         NO_DEVICE:            { title: "Not Connected",        message: "No BLE device connected." },
         BLE_ERROR:            { title: "BLE Error",            message: "Communication error. Try again." },
@@ -119,10 +103,7 @@ export default function RechargeScreen() {
       };
       const err = result.error ?? "UNKNOWN";
       const mapped = errorMessages[err] ?? { title: "Error", message: err };
-      setAlertType("error");
-      setAlertTitle(mapped.title);
-      setAlertMessage(mapped.message);
-      setShowAlert(true);
+      showError(mapped.title, mapped.message);
     });
   };
 
@@ -168,7 +149,7 @@ export default function RechargeScreen() {
               placeholder="0"
               placeholderTextColor="rgba(255,255,255,0.2)"
               selectionColor="#F2CB07"
-              editable={!isChecking}
+              editable={!isLoading}
             />
           </Animated.View>
 
@@ -183,7 +164,7 @@ export default function RechargeScreen() {
               key={q}
               style={[styles.quickChip, amount === String(q) && styles.quickChipActive]}
               onPress={() => setAmount(String(q))}
-              disabled={isChecking}
+              disabled={isLoading}
             >
               <Text style={[styles.quickText, amount === String(q) && styles.quickTextActive]}>
                 ₹{q}
@@ -195,15 +176,15 @@ export default function RechargeScreen() {
         {/* Submit button */}
         <Animated.View style={[styles.btnWrap, { transform: [{ scale: btnScale }] }]}>
           <TouchableOpacity
-            style={[styles.submitBtn, isChecking && styles.submitBtnLoading]}
+            style={[styles.submitBtn, isLoading && styles.submitBtnLoading]}
             onPress={handleRecharge}
             activeOpacity={0.88}
-            disabled={isChecking}
+            disabled={isLoading}
           >
-            {isChecking ? (
+            {isLoading ? (
               <>
-                <Ionicons name="cloud-download-outline" size={20} color="#1A0E4F" />
-                <Text style={styles.submitText}>Checking Balance...</Text>
+                <Ionicons name="radio-outline" size={20} color="#1A0E4F" />
+                <Text style={styles.submitText}>Processing...</Text>
               </>
             ) : (
               <>

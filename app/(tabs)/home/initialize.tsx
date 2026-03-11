@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, Animated,
+  TextInput, Animated, ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,7 +13,11 @@ import { initializeMachineRFID } from "@/app/api/initialize";
 export default function InitializeScreen() {
   const router = useRouter();
   const { deviceName, deviceId, machineId } = useLocalSearchParams();
+
   const [amount, setAmount] = useState("");
+  const [usn, setUsn] = useState("");
+  const [cardUUID, setCardUUID] = useState<string | null>(null);
+
   const [showAlert, setShowAlert] = useState(false);
   const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [alertTitle, setAlertTitle] = useState("");
@@ -21,6 +25,8 @@ export default function InitializeScreen() {
 
   const btnScale = useRef(new Animated.Value(1)).current;
   const inputShake = useRef(new Animated.Value(0)).current;
+  const cardUUIDOpacity = useRef(new Animated.Value(0)).current;
+  const cardUUIDTranslate = useRef(new Animated.Value(12)).current;
 
   const shake = () => {
     Animated.sequence([
@@ -31,19 +37,35 @@ export default function InitializeScreen() {
     ]).start();
   };
 
-  // ── ALL ORIGINAL LOGIC UNTOUCHED ──
+  const revealCardUUID = (uuid: string) => {
+    setCardUUID(uuid);
+    cardUUIDOpacity.setValue(0);
+    cardUUIDTranslate.setValue(12);
+    Animated.parallel([
+      Animated.timing(cardUUIDOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
+      Animated.timing(cardUUIDTranslate, { toValue: 0, duration: 450, useNativeDriver: true }),
+    ]).start();
+  };
+
   const handleInitialize = async () => {
     const value = parseInt(amount, 10);
+
     if (!amount || isNaN(value) || value <= 0) {
       shake();
       setAlertType("error"); setAlertTitle("Invalid Amount");
       setAlertMessage("Please enter a valid amount"); setShowAlert(true); return;
     }
-    if (value < 200) {
+    if (value < 50) {
       shake();
-      setAlertType("error"); setAlertTitle("Minimum ₹200");
-      setAlertMessage("Initialization requires minimum ₹200"); setShowAlert(true); return;
+      setAlertType("error"); setAlertTitle("Minimum ₹50");
+      setAlertMessage("Initialization requires minimum ₹50"); setShowAlert(true); return;
     }
+    if (!usn.trim()) {
+      shake();
+      setAlertType("error"); setAlertTitle("USN Required");
+      setAlertMessage("Please enter the student's register number"); setShowAlert(true); return;
+    }
+
     Animated.sequence([
       Animated.spring(btnScale, { toValue: 0.92, useNativeDriver: true, tension: 300 }),
       Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, tension: 300 }),
@@ -51,34 +73,50 @@ export default function InitializeScreen() {
 
     initializeCardBLE(value.toString(), async (result) => {
       console.log("BLE INIT RESULT:", JSON.stringify(result));
+
+      // ✅ Show UUID immediately whenever card is tapped — success OR error
+      if (result.cardId) {
+        revealCardUUID(result.cardId);
+      }
+
       if (result.error === "CARD_ALREADY_INITIALIZED") {
         setAlertType("error"); setAlertTitle("Already Initialized");
-        setAlertMessage(`Card already has ₹${result.balance ?? 0}`); setShowAlert(true); return;
+        setAlertMessage(`This card is already initialized.\nBalance: ₹${result.balance ?? 0}\nCard ID: ${result.cardId ?? "—"}`);
+        setShowAlert(true); return;
       }
       if (result.error === "NO_CARD_DETECTED") {
         setAlertType("error"); setAlertTitle("No Card");
         setAlertMessage("Place card on the reader and try again"); setShowAlert(true); return;
       }
-      if (result.error === "MINIMUM_200_REQUIRED") {
-        setAlertType("error"); setAlertTitle("Minimum ₹200");
-        setAlertMessage("Initialization requires minimum ₹200"); setShowAlert(true); return;
+      if (result.error === "MINIMUM_REQUIRED") {
+        setAlertType("error"); setAlertTitle("Minimum ₹50");
+        setAlertMessage("Initialization requires minimum ₹50"); setShowAlert(true); return;
       }
       if (result.error) {
         setAlertType("error"); setAlertTitle("Initialization Failed");
         setAlertMessage(result.error); setShowAlert(true); return;
       }
+
       if (result.success) {
         setTimeout(async () => {
           try {
-            console.log("Syncing with server...");
-            await initializeMachineRFID(machineId as string, value);
-            setAlertType("success"); setAlertTitle("Card Initialized!");
-            setAlertMessage(`₹${value} loaded on card.\nNew Card Balance: ₹${result.balance ?? value}`);
+            await initializeMachineRFID(
+              machineId as string,
+              value,
+              result.cardId!,
+              usn.trim(),
+            );
+
+            setAlertType("success");
+            setAlertTitle("Card Initialized!");
+            setAlertMessage(
+              `₹${value} loaded successfully.\nBalance: ₹${result.balance ?? value}\nCard ID: ${result.cardId}`
+            );
             setShowAlert(true);
           } catch (e: any) {
             console.log("Server sync failed:", e);
-            setAlertType("error"); setAlertTitle("Sync Warning");
-            setAlertMessage("Card initialized but machine wallet was not deducted.\nPlease contact support.");
+            setAlertType("error"); setAlertTitle("Sync Failed");
+            setAlertMessage("Card initialized but server sync failed.\nPlease contact support.");
             setShowAlert(true);
           }
         }, 700);
@@ -88,15 +126,28 @@ export default function InitializeScreen() {
 
   const handleAlertClose = () => {
     setShowAlert(false);
-    if (alertType === "success") { setAmount(""); router.back(); }
+    if (alertType === "success") {
+      setAmount("");
+      setUsn("");
+      setCardUUID(null);
+      cardUUIDOpacity.setValue(0);
+      cardUUIDTranslate.setValue(12);
+      router.back();
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.bgBase} />
       <View style={styles.bgOrb} />
+      <View style={styles.bgOrbTop} />
 
-      <View style={styles.container}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -106,11 +157,9 @@ export default function InitializeScreen() {
           <View style={{ width: 42 }} />
         </View>
 
-      
-
         {/* Steps */}
         <View style={styles.stepsRow}>
-          {["Enter Amount", "Tap Card", "Done"].map((step, i) => (
+          {["Enter Details", "Tap Card", "Done"].map((step, i) => (
             <React.Fragment key={step}>
               <View style={styles.step}>
                 <View style={[styles.stepDot, i === 0 && styles.stepDotActive]}>
@@ -121,6 +170,24 @@ export default function InitializeScreen() {
               {i < 2 && <View style={styles.stepLine} />}
             </React.Fragment>
           ))}
+        </View>
+
+        {/* USN Input */}
+        <View style={styles.fieldSection}>
+          <Text style={styles.fieldLabel}>REGISTER NUMBER (USN)</Text>
+          <Animated.View style={{ transform: [{ translateX: inputShake }] }}>
+            <TextInput
+              style={styles.fieldInput}
+              placeholder="e.g. 1XX21CS000"
+              placeholderTextColor="rgba(255,255,255,0.2)"
+              value={usn}
+              onChangeText={(text) => setUsn(text.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              autoCapitalize="characters"
+              maxLength={12}
+              selectionColor="#F2CB07"
+            />
+          </Animated.View>
+          <View style={styles.fieldUnderline} />
         </View>
 
         {/* Amount input */}
@@ -140,12 +207,12 @@ export default function InitializeScreen() {
             />
           </Animated.View>
           <View style={styles.amountUnderline} />
-          <Text style={styles.minText}>Minimum ₹200</Text>
+          <Text style={styles.minText}>Minimum ₹50</Text>
         </View>
 
         {/* Quick amounts */}
         <View style={styles.quickRow}>
-          {[200, 500, 1000, 2000].map((q) => (
+          {[50, 100, 500, 1000].map((q) => (
             <TouchableOpacity
               key={q}
               style={[styles.quickChip, amount === String(q) && styles.quickChipActive]}
@@ -158,6 +225,35 @@ export default function InitializeScreen() {
           ))}
         </View>
 
+        {/* Card UUID — animates in as soon as card is tapped */}
+        {cardUUID && (
+          <Animated.View
+            style={[
+              styles.uuidCard,
+              {
+                opacity: cardUUIDOpacity,
+                transform: [{ translateY: cardUUIDTranslate }],
+              },
+            ]}
+          >
+            <View style={styles.uuidRow}>
+              <View style={styles.uuidIconWrap}>
+                <Ionicons name="card-outline" size={18} color="#F2CB07" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.uuidTitle}>CARD UUID</Text>
+                <Text style={styles.uuidValue} numberOfLines={1} ellipsizeMode="middle">
+                  {cardUUID}
+                </Text>
+              </View>
+              <View style={styles.uuidBadge}>
+                <Ionicons name="checkmark-circle" size={14} color="#4ADE80" />
+                <Text style={styles.uuidBadgeText}>Detected</Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
         {/* Button */}
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
           <TouchableOpacity style={styles.submitBtn} onPress={handleInitialize} activeOpacity={0.88}>
@@ -165,7 +261,7 @@ export default function InitializeScreen() {
             <Text style={styles.submitText}>Initialize Card</Text>
           </TouchableOpacity>
         </Animated.View>
-      </View>
+      </ScrollView>
 
       <CustomAlert
         visible={showAlert} type={alertType}
@@ -184,7 +280,13 @@ const styles = StyleSheet.create({
     width: 280, height: 280, borderRadius: 140,
     backgroundColor: "rgba(56,32,140,0.45)",
   },
-  container: { flex: 1, paddingHorizontal: 22, paddingTop: 8 },
+  bgOrbTop: {
+    position: "absolute", top: -60, right: -60,
+    width: 200, height: 200, borderRadius: 100,
+    backgroundColor: "rgba(242,203,7,0.06)",
+  },
+  scrollContent: { paddingHorizontal: 22, paddingTop: 8, paddingBottom: 40 },
+
   header: {
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between", marginBottom: 22,
@@ -197,20 +299,9 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#FFF", letterSpacing: 0.3 },
 
-  // Info banner
-  infoBanner: {
-    flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: "rgba(242,203,7,0.07)",
-    borderWidth: 1, borderColor: "rgba(242,203,7,0.18)",
-    borderRadius: 14, padding: 14, marginBottom: 24,
-  },
-  infoIcon: { marginTop: 1 },
-  infoText: { flex: 1, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 18 },
-
-  // Steps
   stepsRow: {
     flexDirection: "row", alignItems: "center",
-    justifyContent: "center", marginBottom: 32, gap: 0,
+    justifyContent: "center", marginBottom: 32,
   },
   step: { alignItems: "center", gap: 6 },
   stepDot: {
@@ -219,15 +310,25 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
     alignItems: "center", justifyContent: "center",
   },
-  stepDotActive: {
-    backgroundColor: "rgba(242,203,7,0.2)",
-    borderColor: "#F2CB07",
-  },
+  stepDotActive: { backgroundColor: "rgba(242,203,7,0.2)", borderColor: "#F2CB07" },
   stepNum: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.6)" },
   stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 0.5 },
   stepLine: { width: 40, height: 1, backgroundColor: "rgba(255,255,255,0.1)", marginBottom: 14 },
 
-  // Amount
+  fieldSection: { marginBottom: 28 },
+  fieldLabel: {
+    fontSize: 11, color: "rgba(255,255,255,0.35)",
+    letterSpacing: 3, fontWeight: "700", marginBottom: 10,
+  },
+  fieldInput: {
+    fontSize: 22, fontWeight: "700", color: "#FFF",
+    paddingVertical: 6, letterSpacing: 2,
+  },
+  fieldUnderline: {
+    height: 2, borderRadius: 1,
+    backgroundColor: "rgba(255,255,255,0.12)", marginTop: 6,
+  },
+
   amountSection: { alignItems: "center", marginBottom: 28 },
   amountLabel: {
     fontSize: 11, color: "rgba(255,255,255,0.35)",
@@ -241,13 +342,11 @@ const styles = StyleSheet.create({
   },
   amountUnderline: {
     width: 120, height: 2, borderRadius: 1,
-    backgroundColor: "rgba(242,203,7,0.3)",
-    marginTop: 8, marginBottom: 10,
+    backgroundColor: "rgba(242,203,7,0.3)", marginTop: 8, marginBottom: 10,
   },
   minText: { fontSize: 12, color: "rgba(242,203,7,0.5)", fontWeight: "600" },
 
-  // Quick
-  quickRow: { flexDirection: "row", justifyContent: "center", gap: 10, marginBottom: 32 },
+  quickRow: { flexDirection: "row", justifyContent: "center", gap: 10, marginBottom: 28 },
   quickChip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
     borderWidth: 1, borderColor: "rgba(242,203,7,0.2)",
@@ -257,7 +356,33 @@ const styles = StyleSheet.create({
   quickText: { color: "rgba(255,255,255,0.5)", fontSize: 13, fontWeight: "600" },
   quickTextActive: { color: "#F2CB07" },
 
-  // Button
+  uuidCard: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1, borderColor: "rgba(74,222,128,0.25)",
+    borderRadius: 16, padding: 14, marginBottom: 24,
+  },
+  uuidRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  uuidIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: "rgba(242,203,7,0.1)",
+    alignItems: "center", justifyContent: "center",
+  },
+  uuidTitle: {
+    fontSize: 10, color: "rgba(255,255,255,0.35)",
+    letterSpacing: 2, fontWeight: "700", marginBottom: 3,
+  },
+  uuidValue: {
+    fontSize: 15, color: "#FFF", fontWeight: "700",
+    letterSpacing: 1.5, fontFamily: "monospace",
+  },
+  uuidBadge: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(74,222,128,0.1)",
+    borderWidth: 1, borderColor: "rgba(74,222,128,0.2)",
+    borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  uuidBadgeText: { fontSize: 11, color: "#4ADE80", fontWeight: "600" },
+
   submitBtn: {
     backgroundColor: "#F2CB07", borderRadius: 16, height: 58,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,

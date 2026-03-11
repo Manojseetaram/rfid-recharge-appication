@@ -8,7 +8,7 @@ export async function fetchRechargeHistory(machineId: string) {
   console.log("Fetching history for machineId:", machineId);
 
   const response = await fetch(
-    `${API_BASE}/warden/recharge-history/${machineId}`,
+    `${API_BASE}/machine-user/recharge-history/${machineId}`,
     {
       method: "GET",
       headers: {
