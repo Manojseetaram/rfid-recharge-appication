@@ -2,9 +2,12 @@ import * as SecureStore from "expo-secure-store";
 
 const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
+// ─────────────────────────────────────────────
+// FETCH MACHINE BALANCE
+// ─────────────────────────────────────────────
 export async function fetchMachineBalance(machineId: string): Promise<number> {
   const token = await SecureStore.getItemAsync("auth_token");
-console.log("machineId being used for balance check:", String(machineId));
+  console.log("Fetching balance:", `${API_BASE}/machine-user/fetchMachineBalance/${machineId}`);
 
   const response = await fetch(`${API_BASE}/machine-user/fetchMachineBalance/${machineId}`, {
     method: "GET",
@@ -15,7 +18,7 @@ console.log("machineId being used for balance check:", String(machineId));
   });
 
   const json = await response.json();
-  console.log("Machine balance check:", json);
+  console.log("Balance response:", json);
 
   if (!response.ok) throw new Error(json.message || "Failed to fetch machine balance");
 
@@ -23,13 +26,16 @@ console.log("machineId being used for balance check:", String(machineId));
   return isNaN(balance) ? 0 : balance;
 }
 
-
-
+// ─────────────────────────────────────────────
+// SERVER-FIRST RECHARGE
+// Step 1: Deduct from server BEFORE touching card
+// Returns transaction info so we know server succeeded
+// ─────────────────────────────────────────────
 export async function rechargeMachineRFID(
   machineId: string,
   amount: number,
   cardId: string
-) {
+): Promise<{ success: boolean; transactionId?: string }> {
   const token = await SecureStore.getItemAsync("auth_token");
 
   const payload = {
@@ -54,5 +60,9 @@ export async function rechargeMachineRFID(
 
   if (!response.ok) throw new Error(text);
 
-  return JSON.parse(text);
+  const json = JSON.parse(text);
+  return {
+    success: true,
+    transactionId: json.data?.transaction_id ?? json.transaction_id,
+  };
 }
