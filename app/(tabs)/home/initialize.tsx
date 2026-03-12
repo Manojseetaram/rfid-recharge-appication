@@ -174,11 +174,11 @@ export default function InitializeScreen() {
 
         {/* USN Input */}
         <View style={styles.fieldSection}>
-          <Text style={styles.fieldLabel}>REGISTER NUMBER (USN)</Text>
+       
           <Animated.View style={{ transform: [{ translateX: inputShake }] }}>
             <TextInput
               style={styles.fieldInput}
-              placeholder="e.g. 1XX21CS000"
+              placeholder="Enter your register number"
               placeholderTextColor="rgba(255,255,255,0.2)"
               value={usn}
               onChangeText={(text) => setUsn(text.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
@@ -212,7 +212,7 @@ export default function InitializeScreen() {
 
         {/* Quick amounts */}
         <View style={styles.quickRow}>
-          {[50, 100, 500, 1000].map((q) => (
+          {[100, 150, 200, 250].map((q) => (
             <TouchableOpacity
               key={q}
               style={[styles.quickChip, amount === String(q) && styles.quickChipActive]}
@@ -321,9 +321,8 @@ const styles = StyleSheet.create({
     letterSpacing: 3, fontWeight: "700", marginBottom: 10,
   },
   fieldInput: {
-    fontSize: 22, fontWeight: "700", color: "#FFF",
-    paddingVertical: 6, letterSpacing: 2,
-  },
+    fontSize: 15, fontWeight: "700", color: "#FFF",
+    paddingVertical: 6, letterSpacing: 1   },
   fieldUnderline: {
     height: 2, borderRadius: 1,
     backgroundColor: "rgba(255,255,255,0.12)", marginTop: 6,

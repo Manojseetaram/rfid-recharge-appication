@@ -203,7 +203,7 @@ export default function RechargeScreen() {
 
         {/* Quick amounts */}
         <View style={styles.quickRow}>
-          {[50, 100, 200, 500].map((q) => (
+          {[50, 100, 150, 200].map((q) => (
             <TouchableOpacity
               key={q}
               style={[styles.quickChip, amount === String(q) && styles.quickChipActive]}

@@ -231,18 +231,7 @@ export default function CardHomeScreen() {
           </View>
         </Animated.View>
 
-        {/* ── Device info strip ── */}
-        <Animated.View style={[styles.infoStrip, { opacity: headerFade }]}>
-          <Ionicons name="hardware-chip-outline" size={14} color="rgba(242,203,7,0.6)" />
-          <Text style={styles.infoStripText}>
-            {String(machineId).slice(0, 8).toUpperCase()}...
-          </Text>
-          <View style={styles.infoStripDivider} />
-          <Ionicons name="bluetooth" size={14} color="rgba(242,203,7,0.6)" />
-          <Text style={styles.infoStripText}>BLE</Text>
-        </Animated.View>
-
-        {/* ── Action grid ── */}
+      
         <View style={styles.grid}>
 
           {/* Initialize — full width, top */}
