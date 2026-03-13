@@ -7,7 +7,6 @@ const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 // ─────────────────────────────────────────────
 export async function fetchMachineBalance(machineId: string): Promise<number> {
   const token = await SecureStore.getItemAsync("auth_token");
-  console.log("Fetching balance:", `${API_BASE}/machine-user/fetchMachineBalance/${machineId}`);
 
   const response = await fetch(`${API_BASE}/machine-user/fetchMachineBalance/${machineId}`, {
     method: "GET",
@@ -18,8 +17,6 @@ export async function fetchMachineBalance(machineId: string): Promise<number> {
   });
 
   const json = await response.json();
-  console.log("Balance response:", json);
-
   if (!response.ok) throw new Error(json.message || "Failed to fetch machine balance");
 
   const balance = parseFloat(json.data?.balance ?? "0");
@@ -28,8 +25,11 @@ export async function fetchMachineBalance(machineId: string): Promise<number> {
 
 // ─────────────────────────────────────────────
 // SERVER-FIRST RECHARGE
-// Step 1: Deduct from server BEFORE touching card
-// Returns transaction info so we know server succeeded
+// Called BEFORE BLE — server validates:
+//   • card exists and is active
+//   • machine has enough balance
+// If server returns 400 → card inactive / not found / machine balance low
+// Only if this succeeds (200) do we proceed to BLE physical recharge
 // ─────────────────────────────────────────────
 export async function rechargeMachineRFID(
   machineId: string,
@@ -58,6 +58,8 @@ export async function rechargeMachineRFID(
   console.log("Recharge response:", text);
   console.log("Status:", response.status);
 
+  // Server rejects → card inactive / not found / machine balance low
+  // Throw raw text so recharge.tsx can parse the exact error message
   if (!response.ok) throw new Error(text);
 
   const json = JSON.parse(text);

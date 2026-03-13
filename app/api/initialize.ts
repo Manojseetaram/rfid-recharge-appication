@@ -3,9 +3,12 @@ import * as SecureStore from "expo-secure-store";
 const API_BASE = "https://sv0gotfhtb.execute-api.ap-south-1.amazonaws.com/Prod";
 
 // ─────────────────────────────────────────────
-// CHECK IF CARD IS REGISTERED ON SERVER
-// Returns card info if found, null on API error
-// { exists: false } if 404 / not found → safe to re-init
+// CHECK IF CARD EXISTS ON SERVER (by card_id only)
+//
+// Returns:
+//   null           → API error → BLOCK (safe)
+//   { exists: false } → 404, card not registered → ALLOW init
+//   { exists: true  } → card already registered → BLOCK forever
 // ─────────────────────────────────────────────
 export async function checkCardOnServer(cardId: string): Promise<{
   exists: boolean;
@@ -30,10 +33,10 @@ export async function checkCardOnServer(cardId: string): Promise<{
     const text = await response.text();
     console.log("Check card response:", text, "status:", response.status);
 
-    // 404 → card not on server → safe to re-init
+    // 404 → not registered → allow init
     if (response.status === 404) return { exists: false };
 
-    // Any other non-OK → API error, be safe
+    // Other error → block to be safe
     if (!response.ok) return null;
 
     const json = JSON.parse(text);
@@ -51,15 +54,15 @@ export async function checkCardOnServer(cardId: string): Promise<{
 }
 
 // ─────────────────────────────────────────────
-// INITIALIZE CARD ON SERVER
-// Call this AFTER BLE init succeeds
+// REGISTER CARD ON SERVER
+// Called AFTER BLE init succeeds
 // ─────────────────────────────────────────────
 export async function initializeMachineRFID(
   machineId: string,
   amount: number,
   cardId: string,
   usn: string
-) {
+): Promise<{ success: boolean }> {
   const token = await SecureStore.getItemAsync("auth_token");
   if (!token) throw new Error("Token missing");
 
@@ -89,5 +92,5 @@ export async function initializeMachineRFID(
 
   if (!response.ok) throw new Error(text);
 
-  return JSON.parse(text);
+  return { success: true };
 }

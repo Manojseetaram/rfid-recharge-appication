@@ -9,67 +9,19 @@ const SERVICE_UUID        = "12345678-1234-1234-1234-1234567890ab";
 const CHARACTERISTIC_UUID = "abcd1234-1234-1234-1234-abcdef123456";
 
 // ─────────────────────────────────────────────
-// INTERNAL: shared monitor + write helper
-// Reduces duplication across all BLE operations.
+// NOTE: forceInitializeCardBLE has been intentionally REMOVED.
+//
+// A card that returns ALREADY_INIT when the server has no record
+// is a data integrity issue requiring admin intervention, NOT
+// a case to silently overwrite with force-init.
+//
+// The only valid initialization path is:
+//   READ_ID → server check (not registered) → INIT
 // ─────────────────────────────────────────────
-function monitorAndWrite<T>(
-  command: object,
-  parser: (data: any) => T | null,
-  onResult: (result: T) => void,
-  onError: (err: string) => void
-) {
-  if (!connectedDevice) {
-    onError("NO_DEVICE");
-    return;
-  }
-
-  let finished = false;
-
-  connectedDevice.monitorCharacteristicForService(
-    SERVICE_UUID,
-    CHARACTERISTIC_UUID,
-    (error, characteristic) => {
-      if (finished) return;
-
-      if (error) {
-        finished = true;
-        onError("BLE_ERROR");
-        return;
-      }
-
-      if (!characteristic?.value) return;
-
-      try {
-        const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
-        console.log("RAW BLE:", msg);
-        const data = JSON.parse(msg);
-        const parsed = parser(data);
-        if (parsed !== null) {
-          finished = true;
-          onResult(parsed);
-        }
-      } catch (_) {}
-    }
-  );
-
-  connectedDevice
-    .writeCharacteristicWithResponseForService(
-      SERVICE_UUID,
-      CHARACTERISTIC_UUID,
-      Buffer.from(JSON.stringify(command)).toString("base64")
-    )
-    .catch(() => {
-      if (!finished) {
-        finished = true;
-        onError("COMMUNICATION_FAILED");
-      }
-    });
-}
 
 // ─────────────────────────────────────────────
-// READ_ID — Reads only the card UID, touches nothing else.
-// Called FIRST during initialization so we can check the server
-// before deciding whether to INIT or FORCE_INIT.
+// READ_ID — Reads only the card UID, writes nothing.
+// Called FIRST so server can be checked before any write.
 // ─────────────────────────────────────────────
 export function readCardIdBLE(
   onResult: (result: { success?: boolean; cardId?: string; error?: string }) => void
@@ -262,8 +214,13 @@ export async function rechargeCardBLE(
 }
 
 // ─────────────────────────────────────────────
-// INITIALIZE CARD — For brand-new cards (never initialized).
-// Server check must be done BEFORE calling this.
+// INITIALIZE CARD
+// Only for brand-new cards (never initialized on server).
+// Server check MUST be done and return exists:false before calling this.
+//
+// If firmware returns ALREADY_INIT here, it means the card has a
+// firmware flag but no server record → data integrity issue.
+// The caller (initialize.tsx) must BLOCK and escalate, not retry.
 // ─────────────────────────────────────────────
 export async function initializeCardBLE(
   amount: string,
@@ -309,14 +266,16 @@ export async function initializeCardBLE(
         if (data.error) {
           finished = true;
           switch (data.error) {
-            case "NO_CARD":        onResult({ error: "NO_CARD_DETECTED" }); break;
-            case "ALREADY_INIT":   onResult({ error: "CARD_ALREADY_INITIALIZED", balance: data.balance, cardId: data.card_id ?? "" }); break;
-            case "WRITE_FAIL":     onResult({ error: "CARD_WRITE_FAILED" }); break;
-            case "FORMAT_FAIL":    onResult({ error: "CARD_FORMAT_FAILED" }); break;
+            case "NO_CARD":      onResult({ error: "NO_CARD_DETECTED" }); break;
+            // ALREADY_INIT → card has firmware flag but server has no record.
+            // Return as-is so caller can BLOCK (not force-init).
+            case "ALREADY_INIT": onResult({ error: "CARD_ALREADY_INITIALIZED", balance: data.balance, cardId: data.card_id ?? "" }); break;
+            case "WRITE_FAIL":   onResult({ error: "CARD_WRITE_FAILED" }); break;
+            case "FORMAT_FAIL":  onResult({ error: "CARD_FORMAT_FAILED" }); break;
             case "MIN_100":
             case "MIN_200":
-            case "MIN_50":         onResult({ error: "MINIMUM_REQUIRED" }); break;
-            default:               onResult({ error: "UNKNOWN_ERROR" }); break;
+            case "MIN_50":       onResult({ error: "MINIMUM_REQUIRED" }); break;
+            default:             onResult({ error: "UNKNOWN_ERROR" }); break;
           }
         }
       } catch (_) {}
@@ -329,82 +288,6 @@ export async function initializeCardBLE(
       CHARACTERISTIC_UUID,
       Buffer.from(
         JSON.stringify({ command: "INIT", amount: Number(amount) })
-      ).toString("base64")
-    );
-  } catch (_) {
-    if (!finished) {
-      finished = true;
-      onResult({ error: "COMMUNICATION_FAILED" });
-    }
-  }
-}
-
-// ─────────────────────────────────────────────
-// FORCE INITIALIZE CARD
-// Used when card was deleted from server but is still physically initialized.
-// Skips ALREADY_INIT guard on firmware. Resets balance to 0 then writes new amount.
-// Server check must confirm card does NOT exist before calling this.
-// ─────────────────────────────────────────────
-export async function forceInitializeCardBLE(
-  amount: string,
-  onResult: (result: {
-    success?: boolean;
-    error?: string;
-    balance?: number;
-    cardId?: string;
-  }) => void
-) {
-  if (!connectedDevice) {
-    onResult({ error: "NO_DEVICE" });
-    return;
-  }
-
-  let finished = false;
-
-  connectedDevice.monitorCharacteristicForService(
-    SERVICE_UUID,
-    CHARACTERISTIC_UUID,
-    (error, characteristic) => {
-      if (finished) return;
-
-      if (error) {
-        finished = true;
-        onResult({ error: "BLE_ERROR" });
-        return;
-      }
-
-      if (!characteristic?.value) return;
-
-      try {
-        const msg = Buffer.from(characteristic.value, "base64").toString("utf8");
-        const data = JSON.parse(msg);
-        console.log("RAW BLE (FORCE_INIT):", msg);
-
-        if (data.status === "SUCCESS") {
-          finished = true;
-          onResult({ success: true, balance: data.updated_balance, cardId: data.card_id });
-          return;
-        }
-
-        if (data.error) {
-          finished = true;
-          switch (data.error) {
-            case "NO_CARD":     onResult({ error: "NO_CARD_DETECTED" }); break;
-            case "WRITE_FAIL":  onResult({ error: "CARD_WRITE_FAILED" }); break;
-            case "FORMAT_FAIL": onResult({ error: "CARD_FORMAT_FAILED" }); break;
-            default:            onResult({ error: data.error }); break;
-          }
-        }
-      } catch (_) {}
-    }
-  );
-
-  try {
-    await connectedDevice.writeCharacteristicWithResponseForService(
-      SERVICE_UUID,
-      CHARACTERISTIC_UUID,
-      Buffer.from(
-        JSON.stringify({ command: "FORCE_INIT", amount: Number(amount) })
       ).toString("base64")
     );
   } catch (_) {

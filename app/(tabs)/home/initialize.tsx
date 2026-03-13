@@ -10,25 +10,27 @@ import CustomAlert from "./customalert";
 import {
   readCardIdBLE,
   initializeCardBLE,
-  forceInitializeCardBLE,
 } from "@/app/bluetooth/manager";
 import { initializeMachineRFID, checkCardOnServer } from "@/app/api/initialize";
 
 // ─────────────────────────────────────────────
-// INITIALIZATION FLOW (server-first):
+// STRICT ONE-TIME INIT FLOW:
 //
-// 1. User enters USN + amount → presses "Initialize Card"
-// 2. READ_ID: Tap card → get card_id (no data written)
-// 3. Check server with card_id:
-//    a. API error            → show "Server Error"
-//    b. Card EXISTS on server → show "Already Initialized" with balance/USN
-//    c. Card NOT on server   → proceed to step 4
-// 4. Try BLE INIT:
-//    a. SUCCESS              → register on server ✅
-//    b. ALREADY_INIT         → card was deleted from server but firmware still
-//                              has it → send FORCE_INIT (resets balance to 0)
-//                              → register on server ✅
-//    c. Any other error      → show error
+//  1. Enter USN + amount → press Initialize
+//  2. BLE READ_ID → get card_id (nothing written)
+//  3. Server check:
+//       → exists: true  → PERMANENT BLOCK, show details, no path forward
+//       → exists: false → proceed to BLE write
+//       → null (error)  → BLOCK (safe default)
+//  4. BLE INIT → write to physical card
+//       → ALREADY_INIT error → server said not registered but card has
+//                               firmware flag set → PERMANENT BLOCK,
+//                               tell admin. NO force-init allowed.
+//  5. Server register → record card_id + USN
+//
+// FORCE_INIT is intentionally REMOVED. A card that returns
+// ALREADY_INIT when the server has no record is a data integrity
+// issue that must be resolved by an admin, not silently overwritten.
 // ─────────────────────────────────────────────
 
 export default function InitializeScreen() {
@@ -52,7 +54,6 @@ export default function InitializeScreen() {
   const cardUUIDOpacity = useRef(new Animated.Value(0)).current;
   const cardUUIDTranslate = useRef(new Animated.Value(12)).current;
 
-  // ── Helpers ──────────────────────────────────
   const shake = () => {
     Animated.sequence([
       Animated.timing(inputShake, { toValue: 8,  duration: 60, useNativeDriver: true }),
@@ -62,7 +63,11 @@ export default function InitializeScreen() {
     ]).start();
   };
 
-  const showError = (title: string, message: string, type: "error" | "warning" = "error") => {
+  const showMsg = (
+    type: "success" | "error" | "warning",
+    title: string,
+    message: string
+  ) => {
     setAlertType(type);
     setAlertTitle(title);
     setAlertMessage(message);
@@ -80,36 +85,15 @@ export default function InitializeScreen() {
   };
 
   // ─────────────────────────────────────────────
-  // STEP 4b: Force re-init (card deleted from server)
-  // Balance reset to 0 + new amount written on card, then register on server
+  // STEP 4: BLE INIT — write to physical card
+  // Only reached when server confirmed card_id is NOT registered.
+  //
+  // ALREADY_INIT here means: firmware has 0xAA flag but server has
+  // no record. This is a data integrity issue. We BLOCK and tell
+  // admin — we do NOT force-overwrite.
   // ─────────────────────────────────────────────
-  const doForceInit = (value: number) => {
-    setLoadingLabel("Resetting card... tap card again");
-
-    forceInitializeCardBLE(value.toString(), async (result) => {
-      console.log("FORCE_INIT result:", JSON.stringify(result));
-
-      if (result.error === "NO_CARD_DETECTED") {
-        setIsLoading(false);
-        showError("No Card", "Place card on the reader and try again");
-        return;
-      }
-      if (result.error) {
-        setIsLoading(false);
-        showError("Re-initialization Failed", result.error);
-        return;
-      }
-      if (result.success && result.cardId) {
-        await doServerRegister(result.cardId, value, result.balance ?? value);
-      }
-    });
-  };
-
-  // ─────────────────────────────────────────────
-  // STEP 4: BLE INIT (after server confirms card is not registered)
-  // ─────────────────────────────────────────────
-  const doBleInit = (value: number) => {
-    setLoadingLabel("Tap card on reader...");
+  const doBleInit = (value: number, cardId: string) => {
+    setLoadingLabel("Tap card again to write...");
 
     initializeCardBLE(value.toString(), async (result) => {
       console.log("INIT result:", JSON.stringify(result));
@@ -118,30 +102,34 @@ export default function InitializeScreen() {
 
       if (result.error === "NO_CARD_DETECTED") {
         setIsLoading(false);
-        showError("No Card", "Place card on the reader and try again");
-        return;
-      }
-      if (result.error === "MINIMUM_REQUIRED") {
-        setIsLoading(false);
-        showError("Minimum ₹100", "Initialization requires minimum ₹100");
+        showMsg("error", "No Card", "Place card on the reader and try again.");
         return;
       }
 
-      // Firmware says ALREADY_INIT — but server already confirmed card is NOT there.
-      // This means card was deleted from server → force re-init.
+      if (result.error === "MINIMUM_REQUIRED") {
+        setIsLoading(false);
+        showMsg("error", "Minimum ₹100", "Initialization requires minimum ₹100.");
+        return;
+      }
+
+  
       if (result.error === "CARD_ALREADY_INITIALIZED") {
-        setLoadingLabel("Card deleted from system, re-initializing...");
-        setTimeout(() => doForceInit(value), 400);
+        setIsLoading(false);
+        showMsg(
+          "warning",
+          "Card Allready inilized ",
+          `This card has initialization allready register.\n\nCard ID: ${cardId}\n\nDo NOT reuse this card. Please contact an administrator to resolve this.`
+        );
         return;
       }
 
       if (result.error) {
         setIsLoading(false);
-        showError("Initialization Failed", result.error);
+        showMsg("error", "Initialization Failed", `Error: ${result.error}\nCard ID: ${cardId}`);
         return;
       }
 
-      // BLE SUCCESS → register on server
+      // BLE success → register on server
       if (result.success && result.cardId) {
         await doServerRegister(result.cardId, value, result.balance ?? value);
       }
@@ -149,46 +137,53 @@ export default function InitializeScreen() {
   };
 
   // ─────────────────────────────────────────────
-  // FINAL STEP: Register card on server
+  // STEP 5: Register on server after BLE success
   // ─────────────────────────────────────────────
-  const doServerRegister = async (cardId: string, value: number, cardBalance: number) => {
+  const doServerRegister = async (cardId: string, value: number, balance: number) => {
     setLoadingLabel("Registering on server...");
 
     try {
       await initializeMachineRFID(machineId as string, value, cardId, usn.trim());
-
       setIsLoading(false);
-      setAlertType("success");
-      setAlertTitle("Card Initialized!");
-      setAlertMessage(
-        `₹${value} loaded successfully.\nBalance: ₹${cardBalance}\nCard ID: ${cardId}\nUSN: ${usn.trim()}`
+      showMsg(
+        "success",
+        "Card Initialized!",
+        `₹${value} loaded successfully.\nBalance: ₹${balance}\nCard ID: ${cardId}\nUSN: ${usn.trim()}`
       );
-      setShowAlert(true);
     } catch (e: any) {
-      console.log("Server sync failed:", e);
       setIsLoading(false);
-      showError(
-        "Sync Failed — Contact Admin",
-        `Card initialized with ₹${value} but server registration failed.\nCard ID: ${cardId}\nPlease contact admin immediately.`
+      console.log("Server register failed:", e?.message);
+      // Card was written to physically but server failed.
+      // This is a critical state — card has money but no server record.
+      // Admin must manually register or wipe the card.
+      showMsg(
+        "error",
+        "Critical: Sync Failed",
+        `Card was written but server registration failed.\n\nCard ID: ${cardId}\nUSN: ${usn.trim()}\n\nPlease contact admin immediately. Do NOT reuse this card.`
       );
     }
   };
 
   // ─────────────────────────────────────────────
-  // MAIN HANDLER — entry point
+  // MAIN HANDLER
   // ─────────────────────────────────────────────
   const handleInitialize = () => {
     const value = parseInt(amount, 10);
 
-    // ── Validation ──
     if (!amount || isNaN(value) || value <= 0) {
-      shake(); showError("Invalid Amount", "Please enter a valid amount"); return;
+      shake();
+      showMsg("error", "Invalid Amount", "Please enter a valid amount.");
+      return;
     }
     if (value < 100) {
-      shake(); showError("Minimum ₹100", "Initialization requires minimum ₹100"); return;
+      shake();
+      showMsg("error", "Minimum ₹100", "Initialization requires minimum ₹100.");
+      return;
     }
     if (!usn.trim()) {
-      shake(); showError("USN Required", "Please enter the student's register number"); return;
+      shake();
+      showMsg("error", "USN Required", "Please enter the student's register number.");
+      return;
     }
 
     Animated.sequence([
@@ -198,9 +193,9 @@ export default function InitializeScreen() {
 
     setIsLoading(true);
 
-    // ─────────────────────────────────────────────
-    // STEP 2: READ_ID — tap card to get UID only (nothing written)
-    // ─────────────────────────────────────────────
+    // ─────────────────────────────────────────
+    // STEP 2: READ_ID — get card_id, nothing written to card
+    // ─────────────────────────────────────────
     setLoadingLabel("Tap card to scan...");
 
     readCardIdBLE(async (idResult) => {
@@ -208,52 +203,55 @@ export default function InitializeScreen() {
 
       if (idResult.error === "NO_CARD_DETECTED" || idResult.error === "NO_CARD") {
         setIsLoading(false);
-        showError("No Card", "Place card on the reader and try again");
+        showMsg("error", "No Card", "Place card on the reader and try again.");
         return;
       }
-      if (idResult.error) {
+      if (idResult.error || !idResult.cardId) {
         setIsLoading(false);
-        showError("Card Read Failed", "Could not read card. Try again.");
-        return;
-      }
-      if (!idResult.cardId) {
-        setIsLoading(false);
-        showError("Card Read Failed", "Could not read card ID. Try again.");
+        showMsg("error", "Card Read Failed", "Could not read card. Try again.");
         return;
       }
 
-      // Card ID obtained — show it immediately
-      revealCardUUID(idResult.cardId);
+      const cardId = idResult.cardId;
+      revealCardUUID(cardId);
 
-      // ─────────────────────────────────────────────
-      // STEP 3: Check server — is this card already registered?
-      // ─────────────────────────────────────────────
+      // ─────────────────────────────────────────
+      // STEP 3: Server check — does this card_id exist?
+      //
+      //   null         → API error     → BLOCK (safe default)
+      //   exists: true → registered    → PERMANENT BLOCK, show info
+      //   exists: false → not found    → proceed to BLE write
+      // ─────────────────────────────────────────
       setLoadingLabel("Checking server...");
-      const serverCard = await checkCardOnServer(idResult.cardId);
 
+      const serverCard = await checkCardOnServer(cardId);
+      console.log("Server check result:", JSON.stringify(serverCard));
+
+      // API error → block to be safe
       if (serverCard === null) {
-        // API error — don't proceed
         setIsLoading(false);
-        showError("Server Error", "Could not verify card status. Please try again.");
-        return;
-      }
-
-      if (serverCard.exists) {
-        // Card is already registered on server → block
-        setIsLoading(false);
-        showError(
-          "Already Initialized",
-          `This card is already registered.\nBalance: ₹${serverCard.balance ?? 0}\nUSN: ${serverCard.usn ?? "—"}`,
-          "warning"
+        showMsg(
+          "error",
+          "Server Error",
+          "Could not verify card with server. Please check your connection and try again."
         );
         return;
       }
 
-      // ─────────────────────────────────────────────
-      // Card NOT on server → proceed with BLE INIT
-      // (1st tap = READ_ID, 2nd tap = INIT/FORCE_INIT)
-      // ─────────────────────────────────────────────
-      setTimeout(() => doBleInit(value), 300);
+      // ✅ Card already registered → PERMANENT BLOCK
+      // No re-init, no force-init, no exceptions.
+      if (serverCard.exists) {
+        setIsLoading(false);
+        showMsg(
+          "warning",
+          "Card Already Registered",
+          `This card is already initialized and cannot be re-initialized.\n\nCard ID: ${cardId}\nBalance: ₹${serverCard.balance ?? 0}\nUSN: ${serverCard.usn ?? "—"}\n\nIf this is an error, contact admin.`
+        );
+        return;
+      }
+
+      // Card not on server → safe to proceed to BLE write
+      setTimeout(() => doBleInit(value, cardId), 300);
     });
   };
 
@@ -370,7 +368,7 @@ export default function InitializeScreen() {
           ))}
         </View>
 
-        {/* Card UUID — animates in as soon as card is tapped */}
+        {/* Card UUID */}
         {cardUUID && (
           <Animated.View
             style={[
@@ -396,16 +394,12 @@ export default function InitializeScreen() {
           </Animated.View>
         )}
 
-        {/* Loading hint — tells user what to do during 2-tap flow */}
+        {/* Loading hint */}
         {isLoading && (
           <View style={styles.hintBox}>
             <Ionicons name="information-circle-outline" size={16} color="rgba(242,203,7,0.6)" />
             <Text style={styles.hintText}>
-              {loadingLabel.includes("Tap card")
-                ? "Hold your card near the reader"
-                : loadingLabel.includes("Resetting")
-                ? "Hold card again to reset and re-initialize"
-                : "Please wait..."}
+              {loadingLabel.includes("Tap") ? "Hold your card near the reader" : "Please wait..."}
             </Text>
           </View>
         )}
