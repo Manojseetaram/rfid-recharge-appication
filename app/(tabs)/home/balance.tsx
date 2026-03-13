@@ -1,26 +1,48 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Animated,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { readCardBalanceBLE } from "@/app/bluetooth/manager";
+import { readCardIdBLE, readCardBalanceBLE } from "@/app/bluetooth/manager";
+import { checkCardOnServer } from "@/app/api/initialize";
+import CustomAlert from "./customalert";
+
+// ─────────────────────────────────────────────
+// BALANCE CHECK FLOW (server-first):
+//
+// 1. READ_ID: tap card → get card_id (nothing written)
+// 2. Check server with card_id:
+//    a. API error         → show "Server Error"
+//    b. Card NOT on server → show "Card Not Initialized"
+//    c. Card EXISTS       → proceed to step 3
+// 3. BLE READ: read balance from card
+// ─────────────────────────────────────────────
 
 export default function BalanceScreen() {
   const router = useRouter();
   const { deviceName } = useLocalSearchParams();
+
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Loading phase label so the user knows what to do at each step
+  const [loadingLabel, setLoadingLabel] = useState<"scan" | "checking" | "reading">("scan");
+
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertType, setAlertType] = useState<"error" | "warning">("error");
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const spinAnim = useRef(new Animated.Value(0)).current;
+  const spinAnim  = useRef(new Animated.Value(0)).current;
 
   const animateIn = () => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 500, useNativeDriver: true }),
       Animated.spring(scaleAnim, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
     ]).start();
   };
@@ -32,22 +54,87 @@ export default function BalanceScreen() {
     ).start();
   };
 
-  // ── ALL ORIGINAL LOGIC UNTOUCHED ──
-  const readBalance = async () => {
+  const showError = (title: string, message: string, type: "error" | "warning" = "error") => {
+    setAlertType(type);
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setShowAlert(true);
+  };
+
+  // ─────────────────────────────────────────────
+  // MAIN: readBalance
+  // Step 1 → Step 2 → Step 3
+  // ─────────────────────────────────────────────
+  const readBalance = () => {
     setLoading(true);
+    setBalance(null);
     fadeAnim.setValue(0);
     scaleAnim.setValue(0.8);
     spinLoop();
-    try {
-      await readCardBalanceBLE((value) => {
-        setBalance(value);
+
+    // ── STEP 1: READ_ID — tap card, get UID (nothing written) ──
+    setLoadingLabel("scan");
+
+    readCardIdBLE(async (idResult) => {
+      console.log("READ_ID result:", JSON.stringify(idResult));
+
+      if (idResult.error || !idResult.cardId) {
         setLoading(false);
-        animateIn();
-      });
-    } catch (err) {
-      console.log(err);
-      setLoading(false);
-    }
+        if (idResult.error === "NO_CARD_DETECTED" || idResult.error === "NO_CARD") {
+          showError("No Card Detected", "Place your RFID card flat on the reader and try again.", "warning");
+        } else if (idResult.error === "NO_DEVICE") {
+          showError("Not Connected", "No device connected. Please go back and reconnect.");
+        } else {
+          showError("Card Read Failed", "Could not read card. Please try again.");
+        }
+        return;
+      }
+
+      const cardId = idResult.cardId;
+
+      // ── STEP 2: Check server — is this card registered? ──
+      setLoadingLabel("checking");
+
+      const serverCard = await checkCardOnServer(cardId);
+
+      if (serverCard === null) {
+        setLoading(false);
+        showError("Server Error", "Could not verify card status. Please try again.");
+        return;
+      }
+
+      if (!serverCard.exists) {
+        setLoading(false);
+        showError(
+          "Card Not Initialized",
+          "This card is not registered in the system.\nPlease initialize the card first.",
+          "warning"
+        );
+        return;
+      }
+
+      // ── STEP 3: Card exists on server → read balance from card ──
+      setLoadingLabel("reading");
+
+      try {
+        await readCardBalanceBLE(
+          (value) => {
+            setBalance(value);
+            setLoading(false);
+            animateIn();
+          },
+          (err) => {
+            console.log("readCardBalanceBLE error:", err);
+            setLoading(false);
+            showError("Balance Read Failed", "Could not read balance from card. Try again.");
+          }
+        );
+      } catch (err) {
+        console.log("readCardBalanceBLE threw:", err);
+        setLoading(false);
+        showError("Balance Read Failed", "Could not read balance from card. Try again.");
+      }
+    });
   };
 
   useEffect(() => {
@@ -56,6 +143,19 @@ export default function BalanceScreen() {
   }, []);
 
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+
+  // Dynamic loading UI labels per step
+  const loadingTitle = loadingLabel === "scan"
+    ? "Tap Card to Scan"
+    : loadingLabel === "checking"
+    ? "Checking Server..."
+    : "Reading Balance...";
+
+  const loadingSubtitle = loadingLabel === "scan"
+    ? "Hold your RFID card on the reader"
+    : loadingLabel === "checking"
+    ? "Verifying card registration"
+    : "Hold card still on the reader";
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -84,12 +184,21 @@ export default function BalanceScreen() {
               <View style={styles.nfcOuter}>
                 <View style={styles.nfcMid}>
                   <View style={styles.nfcInner}>
-                    <Ionicons name="wifi" size={32} color="#F2CB07" style={{ transform: [{ rotate: "180deg" }] }} />
+                    {loadingLabel === "checking" ? (
+                      <Ionicons name="cloud-outline" size={32} color="#F2CB07" />
+                    ) : (
+                      <Ionicons
+                        name="wifi"
+                        size={32}
+                        color="#F2CB07"
+                        style={{ transform: [{ rotate: "180deg" }] }}
+                      />
+                    )}
                   </View>
                 </View>
               </View>
-              <Text style={styles.loadingTitle}>Waiting for Card</Text>
-              <Text style={styles.loadingSubtitle}>Tap your RFID card on the reader</Text>
+              <Text style={styles.loadingTitle}>{loadingTitle}</Text>
+              <Text style={styles.loadingSubtitle}>{loadingSubtitle}</Text>
             </View>
           ) : balance !== null ? (
             <Animated.View
@@ -123,6 +232,14 @@ export default function BalanceScreen() {
           ) : null}
         </View>
       </View>
+
+      <CustomAlert
+        visible={showAlert}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        onConfirm={() => setShowAlert(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -181,7 +298,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: "rgba(242,203,7,0.3)",
     alignItems: "center", justifyContent: "center",
   },
-  loadingTitle: { fontSize: 18, fontWeight: "700", color: "#FFF" },
+  loadingTitle:    { fontSize: 18, fontWeight: "700", color: "#FFF" },
   loadingSubtitle: { fontSize: 13, color: "rgba(255,255,255,0.4)", textAlign: "center" },
 
   // Balance card
@@ -219,11 +336,11 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     marginBottom: 8,
   },
-  balanceLabel: { fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: 2, fontWeight: "600" },
-  balanceRow: { flexDirection: "row", alignItems: "flex-start", marginTop: 4 },
-  balanceRupee: { fontSize: 32, color: "#F2CB07", fontWeight: "700", marginTop: 8 },
+  balanceLabel:  { fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: 2, fontWeight: "600" },
+  balanceRow:    { flexDirection: "row", alignItems: "flex-start", marginTop: 4 },
+  balanceRupee:  { fontSize: 32, color: "#F2CB07", fontWeight: "700", marginTop: 8 },
   balanceAmount: { fontSize: 72, fontWeight: "800", color: "#FFF", letterSpacing: -2 },
-  divider: { width: 60, height: 1, backgroundColor: "rgba(255,255,255,0.1)", marginVertical: 12 },
-  deviceRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  deviceName: { fontSize: 12, color: "rgba(242,203,7,0.5)", fontWeight: "600", letterSpacing: 1 },
+  divider:       { width: 60, height: 1, backgroundColor: "rgba(255,255,255,0.1)", marginVertical: 12 },
+  deviceRow:     { flexDirection: "row", alignItems: "center", gap: 6 },
+  deviceName:    { fontSize: 12, color: "rgba(242,203,7,0.5)", fontWeight: "600", letterSpacing: 1 },
 });

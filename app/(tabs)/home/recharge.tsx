@@ -7,17 +7,25 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import CustomAlert from "./customalert";
-import { rechargeCardBLE } from "@/app/bluetooth/manager";
+import { readCardIdBLE, rechargeCardBLE } from "@/app/bluetooth/manager";
 import { rechargeMachineRFID } from "@/app/api/machine";
+import { checkCardOnServer } from "@/app/api/initialize";
 
 const { width } = Dimensions.get("window");
 
 // ─────────────────────────────────────────────
-// FLOW:
-//  1. User enters amount → presses Recharge
-//  2. BLE: tap card → gets cardId + updates balance on card
-//  3. Server: sync transaction
-//  4. If server fails after BLE → show clear support message
+// RECHARGE FLOW (server-first):
+//
+// 1. User enters amount → presses Recharge
+// 2. READ_ID: tap card → get card_id (nothing written)
+// 3. Check server with card_id:
+//    a. API error         → show "Server Error"
+//    b. Card NOT on server → show "Card Not Initialized"
+//    c. Card EXISTS       → proceed to step 4
+// 4. BLE RECHARGE: tap card again → update balance on card
+// 5. Server sync: record transaction
+//    a. Success           → show success ✅
+//    b. Server fail       → show sync error with card ID
 // ─────────────────────────────────────────────
 
 export default function RechargeScreen() {
@@ -39,12 +47,13 @@ export default function RechargeScreen() {
   const btnScale = useRef(new Animated.Value(1)).current;
   const inputShake = useRef(new Animated.Value(0)).current;
 
+  // ── Helpers ──────────────────────────────────
   const shake = () => {
     Animated.sequence([
-      Animated.timing(inputShake, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(inputShake, { toValue: 8,  duration: 60, useNativeDriver: true }),
       Animated.timing(inputShake, { toValue: -8, duration: 60, useNativeDriver: true }),
-      Animated.timing(inputShake, { toValue: 6, duration: 60, useNativeDriver: true }),
-      Animated.timing(inputShake, { toValue: 0, duration: 60, useNativeDriver: true }),
+      Animated.timing(inputShake, { toValue: 6,  duration: 60, useNativeDriver: true }),
+      Animated.timing(inputShake, { toValue: 0,  duration: 60, useNativeDriver: true }),
     ]).start();
   };
 
@@ -59,7 +68,7 @@ export default function RechargeScreen() {
     setShowAlert(true);
   };
 
-  // ── Full BLE error → user-friendly message map ──
+  // ── BLE error → user-friendly message map ──
   const BLE_ERRORS: Record<string, { title: string; message: string; type: "error" | "warning" }> = {
     NO_DEVICE: {
       title: "Not Connected",
@@ -72,6 +81,11 @@ export default function RechargeScreen() {
       type: "error",
     },
     NO_CARD: {
+      title: "No Card Detected",
+      message: "Place your RFID card flat on the reader and try again.",
+      type: "warning",
+    },
+    NO_CARD_DETECTED: {
       title: "No Card Detected",
       message: "Place your RFID card flat on the reader and try again.",
       type: "warning",
@@ -103,7 +117,10 @@ export default function RechargeScreen() {
     },
   };
 
-  const handleRecharge = async () => {
+  // ─────────────────────────────────────────────
+  // MAIN HANDLER
+  // ─────────────────────────────────────────────
+  const handleRecharge = () => {
     const cleanAmount = amount.replace(/[^0-9]/g, "");
     if (!cleanAmount || parseInt(cleanAmount) <= 0) {
       shake();
@@ -115,74 +132,121 @@ export default function RechargeScreen() {
 
     Animated.sequence([
       Animated.spring(btnScale, { toValue: 0.92, useNativeDriver: true, tension: 300 }),
-      Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, tension: 300 }),
+      Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true, tension: 300 }),
     ]).start();
 
     setIsLoading(true);
-    setLoadingLabel("Tap card on reader...");
 
-    rechargeCardBLE(String(machineId), cleanAmount, async (bleResult) => {
-      console.log("BLE RESULT:", JSON.stringify(bleResult));
+    // ─────────────────────────────────────────────
+    // STEP 2: READ_ID — tap card, get UID (nothing written)
+    // ─────────────────────────────────────────────
+    setLoadingLabel("Tap card to scan...");
 
-      // ── BLE failed ──
-      if (!bleResult.success) {
+    readCardIdBLE(async (idResult) => {
+      console.log("READ_ID result:", JSON.stringify(idResult));
+
+      if (idResult.error) {
         setIsLoading(false);
-        const errKey = bleResult.error ?? "UNKNOWN";
-        const errInfo = BLE_ERRORS[errKey] ?? BLE_ERRORS["UNKNOWN"];
+        const errInfo = BLE_ERRORS[idResult.error] ?? BLE_ERRORS["UNKNOWN"];
         showError(errInfo.title, errInfo.message, errInfo.type);
         return;
       }
 
-      // ── BLE success → sync to server ──
-      setLoadingLabel("Syncing with server...");
-
-      try {
-        await rechargeMachineRFID(
-          String(machineId),
-          finalAmount,
-          bleResult.cardId ?? ""
-        );
-
-        // ── All good ✅ ──
+      if (!idResult.cardId) {
         setIsLoading(false);
-        setAlertType("success");
-        setAlertTitle("Recharge Successful!");
-        setAlertMessage(
-          `₹${finalAmount} added to your card.\nNew Balance: ₹${bleResult.balance ?? "—"}`
-        );
-        setShowAlert(true);
-      } catch (e: any) {
-        setIsLoading(false);
-        console.log("Server sync failed after BLE success:", e);
-
-        const serverMsg = (e?.message ?? "").toLowerCase();
-
-        if (
-          serverMsg.includes("insufficient") ||
-          serverMsg.includes("balance")
-        ) {
-          showError(
-            "Machine Balance Low",
-            "Machine does not have enough balance. Please contact admin.",
-            "warning"
-          );
-        } else if (
-          serverMsg.includes("not found") ||
-          serverMsg.includes("card")
-        ) {
-          showError(
-            "Card Not Registered",
-            "This card is not registered. Please initialize the card first.",
-            "warning"
-          );
-        } else {
-          // Card recharged but server didn't record — critical state
-          showError(
-            "Sync Failed — Contact Admin",
-            `Card was recharged ₹${finalAmount} but server sync failed.\nCard ID: ${bleResult.cardId ?? "—"}\nPlease show this message to admin.`
-          );
-        }
+        showError("Card Read Failed", "Could not read card ID. Try again.");
+        return;
       }
+
+      const cardId = idResult.cardId;
+
+      // ─────────────────────────────────────────────
+      // STEP 3: Check server — is this card registered?
+      // ─────────────────────────────────────────────
+      setLoadingLabel("Checking server...");
+      const serverCard = await checkCardOnServer(cardId);
+
+      if (serverCard === null) {
+        // API error
+        setIsLoading(false);
+        showError("Server Error", "Could not verify card status. Please try again.");
+        return;
+      }
+
+      if (!serverCard.exists) {
+        // Card not on server → not initialized or was deleted
+        setIsLoading(false);
+        showError(
+          "Card Not Initialized",
+          "This card is not registered in the system.\nPlease initialize the card first.",
+          "warning"
+        );
+        return;
+      }
+
+      // ─────────────────────────────────────────────
+      // STEP 4: Card exists on server → BLE recharge
+      // (2nd tap — user taps card again to update balance)
+      // ─────────────────────────────────────────────
+      setLoadingLabel("Tap card again to recharge...");
+
+      rechargeCardBLE(String(machineId), cleanAmount, async (bleResult) => {
+        console.log("BLE RECHARGE result:", JSON.stringify(bleResult));
+
+        if (!bleResult.success) {
+          setIsLoading(false);
+          const errKey = bleResult.error ?? "UNKNOWN";
+          const errInfo = BLE_ERRORS[errKey] ?? BLE_ERRORS["UNKNOWN"];
+          showError(errInfo.title, errInfo.message, errInfo.type);
+          return;
+        }
+
+        // ─────────────────────────────────────────────
+        // STEP 5: BLE success → sync to server
+        // ─────────────────────────────────────────────
+        setLoadingLabel("Syncing with server...");
+
+        try {
+          await rechargeMachineRFID(
+            String(machineId),
+            finalAmount,
+            bleResult.cardId ?? cardId   // use BLE card_id, fallback to READ_ID card_id
+          );
+
+          setIsLoading(false);
+          setAlertType("success");
+          setAlertTitle("Recharge Successful!");
+          setAlertMessage(
+            `₹${finalAmount} added to your card.\nNew Balance: ₹${bleResult.balance ?? "—"}`
+          );
+          setShowAlert(true);
+        } catch (e: any) {
+          setIsLoading(false);
+          console.log("Server sync failed after BLE success:", e);
+
+          const serverMsg = (e?.message ?? "").toLowerCase();
+
+          if (serverMsg.includes("insufficient") || serverMsg.includes("balance")) {
+            showError(
+              "Machine Balance Low",
+              "Machine does not have enough balance. Please contact admin.",
+              "warning"
+            );
+          } else if (serverMsg.includes("not found") || serverMsg.includes("card")) {
+            showError(
+              "Card Not Registered",
+              "This card is not registered. Please initialize the card first.",
+              "warning"
+            );
+          } else {
+            // Card recharged physically but server didn't record — critical
+            showError(
+              "Sync Failed — Contact Admin",
+              `Card was recharged ₹${finalAmount} but server sync failed.\nCard ID: ${bleResult.cardId ?? cardId}\nPlease show this message to admin.`
+            );
+          }
+        }
+      });
     });
   };
 
@@ -248,7 +312,11 @@ export default function RechargeScreen() {
 
           <View style={styles.amountUnderline} />
           <Text style={styles.amountHint}>
-            Tap your card on the reader after pressing Recharge
+            {isLoading
+              ? loadingLabel.includes("again")
+                ? "Tap card a second time to update balance"
+                : "Please wait..."
+              : "Tap your card on the reader after pressing Recharge"}
           </Text>
         </View>
 
