@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
 
-type AlertType = "success" | "error" | "confirm";
+type AlertType = "success" | "error" | "warning" | "confirm";
 
 interface CustomAlertProps {
   visible: boolean;
@@ -66,6 +66,14 @@ export default function CustomAlert({
       border: "rgba(255,82,82,0.25)",
       confirmBg: "#FF5252",
       confirmText: "#FFF",
+    },
+    warning: {
+      icon: "warning" as const,
+      color: "#F2CB07",
+      bg: "rgba(242,203,7,0.12)",
+      border: "rgba(242,203,7,0.25)",
+      confirmBg: "#F2CB07",
+      confirmText: "#1A0E4F",
     },
     confirm: {
       icon: "help-circle" as const,
@@ -171,7 +179,6 @@ const styles = StyleSheet.create({
     padding: 28,
     alignItems: "center",
     overflow: "hidden",
-    // Glassmorphism shadow
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.5,
@@ -179,7 +186,6 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
 
-  // Top accent stripe
   topAccent: {
     position: "absolute",
     top: 0, left: 0, right: 0,
@@ -187,7 +193,6 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
 
-  // Corner brackets
   cornerTL: {
     position: "absolute", top: 0, left: 0,
     width: 24, height: 24,
@@ -201,7 +206,6 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 24,
   },
 
-  // Icon
   iconWrap: {
     width: 88,
     height: 88,

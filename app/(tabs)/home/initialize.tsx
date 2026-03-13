@@ -55,10 +55,10 @@ export default function InitializeScreen() {
       setAlertType("error"); setAlertTitle("Invalid Amount");
       setAlertMessage("Please enter a valid amount"); setShowAlert(true); return;
     }
-    if (value < 50) {
+    if (value < 100) {
       shake();
-      setAlertType("error"); setAlertTitle("Minimum ₹50");
-      setAlertMessage("Initialization requires minimum ₹50"); setShowAlert(true); return;
+      setAlertType("error"); setAlertTitle("Minimum ₹100");
+      setAlertMessage("Initialization requires minimum ₹100"); setShowAlert(true); return;
     }
     if (!usn.trim()) {
       shake();
@@ -89,8 +89,8 @@ export default function InitializeScreen() {
         setAlertMessage("Place card on the reader and try again"); setShowAlert(true); return;
       }
       if (result.error === "MINIMUM_REQUIRED") {
-        setAlertType("error"); setAlertTitle("Minimum ₹50");
-        setAlertMessage("Initialization requires minimum ₹50"); setShowAlert(true); return;
+        setAlertType("error"); setAlertTitle("Minimum ₹100");
+        setAlertMessage("Initialization requires minimum ₹100"); setShowAlert(true); return;
       }
       if (result.error) {
         setAlertType("error"); setAlertTitle("Initialization Failed");
@@ -207,7 +207,7 @@ export default function InitializeScreen() {
             />
           </Animated.View>
           <View style={styles.amountUnderline} />
-          <Text style={styles.minText}>Minimum ₹50</Text>
+          <Text style={styles.minText}>Minimum ₹100</Text>
         </View>
 
         {/* Quick amounts */}

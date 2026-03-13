@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Lorent",
-    "slug": "Lorent",
+    "name": "lorent",
+    "slug": "lorent",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/Lorenta-1.png",
-    "scheme": "Lorent",
+    "scheme": "lorent",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -18,7 +18,10 @@
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/Lorenta-1.png",
@@ -38,10 +41,10 @@
           "image": "./assets/images/Lorenta-1.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#38208C",
+          "backgroundColor": "#FFFFFF",
           "dark": {
             "image": "./assets/images/Lorenta-1.png",
-            "backgroundColor": "#38208C"
+            "backgroundColor": "#FFFFFF"
           }
         }
       ],
@@ -51,6 +54,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1dbac4db-478e-4bef-8062-e7daf4f475ec"
+      }
     }
   }
 }

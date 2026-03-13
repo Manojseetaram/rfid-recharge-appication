@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Alert,
   Animated,
   Dimensions,
 } from "react-native";
@@ -177,12 +176,20 @@ const deviceStyles = StyleSheet.create({
   connectText: { color: "#1A0E4F", fontSize: 13, fontWeight: "800" },
 });
 
+// ── Alert config type ──
+type AlertConfig = {
+  type: "error" | "warning";
+  title: string;
+  message: string;
+};
+
 // ── Main screen ──
 export default function HomeScreen() {
   const router = useRouter();
   const [devices, setDevices] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
   const [showLogoutAlert, setShowLogoutAlert] = useState(false);
+  const [alertConfig, setAlertConfig] = useState<AlertConfig | null>(null);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -194,43 +201,41 @@ export default function HomeScreen() {
     ]).start();
   }, []);
 
+  const startScan = async () => {
+    const ok = await requestBlePermissions();
+    if (!ok) return;
 
+    await resetBleManager();
 
-const startScan = async () => {
-  const ok = await requestBlePermissions();
-  if (!ok) return;
+    const bleManager = getBleManager();
 
-  await resetBleManager();   // ✅ Proper reset
+    const state = await bleManager.state();
+    if (state !== "PoweredOn") return;
 
-  const bleManager = getBleManager();
+    setDevices([]);
+    setScanning(true);
 
-  const state = await bleManager.state();
-  if (state !== "PoweredOn") return;
-
-  setDevices([]);
-  setScanning(true);
-
-  bleManager.stopDeviceScan();
-
-  scanForDevices((device) => {
-    if (!device.name?.startsWith("Recharge-")) return;
-
-    setDevices((prev) => {
-      if (prev.some((d) => d.id === device.id)) return prev;
-      return [...prev, device];
-    });
-  });
-
-  scanTimeoutRef.current = setTimeout(() => {
     bleManager.stopDeviceScan();
-    setScanning(false);
-  }, 5000);
-};
+
+    scanForDevices((device) => {
+      if (!device.name?.startsWith("Recharge-")) return;
+
+      setDevices((prev) => {
+        if (prev.some((d) => d.id === device.id)) return prev;
+        return [...prev, device];
+      });
+    });
+
+    scanTimeoutRef.current = setTimeout(() => {
+      bleManager.stopDeviceScan();
+      setScanning(false);
+    }, 5000);
+  };
 
   const fetchMachineInfo = async (machineNo: string) => {
     try {
       const token = await SecureStore.getItemAsync("auth_token");
-const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
+      const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
       console.log("Checking machine:", url);
       const res = await fetch(url, {
         method: "GET",
@@ -250,28 +255,41 @@ const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
       const bleManager = getBleManager();
       bleManager.stopDeviceScan();
       setScanning(false);
+
       if (!device.name?.startsWith("Recharge-")) {
-        Alert.alert("Invalid device");
+        setAlertConfig({
+          type: "error",
+          title: "Invalid Device",
+          message: "This is not a valid Recharge device.",
+        });
         return;
       }
+
       const machineNo = device.name.replace("Recharge-", "").trim();
       console.log("MachineNo extracted:", machineNo);
-      console.log(machineNo, machineNo.length);
+
       const machineInfo = await fetchMachineInfo(machineNo);
       if (!machineInfo) {
-        Alert.alert("Machine not registered in server");
+        setAlertConfig({
+          type: "warning",
+          title: "Not Registered",
+          message: "This machine is not registered in the server.",
+        });
         return;
       }
+
       console.log("Machine verified:", machineInfo.machine_name);
       await disconnectDevice();
       await device.connect();
       await device.discoverAllServicesAndCharacteristics();
+
       try {
         await device.requestMTU(185);
         console.log("MTU increased");
       } catch (e) {
         console.log("MTU request failed (not critical):", e);
       }
+
       setConnectedDevice(device);
       router.push({
         pathname: "/home/connect",
@@ -284,7 +302,11 @@ const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
       });
     } catch (err) {
       console.log("Connection error:", err);
-      Alert.alert("Connection failed");
+      setAlertConfig({
+        type: "error",
+        title: "Connection Failed",
+        message: "Could not connect to the device. Please try again.",
+      });
     }
   };
 
@@ -385,6 +407,7 @@ const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
         />
       </Animated.View>
 
+      {/* ── Logout confirm alert ── */}
       <CustomAlert
         visible={showLogoutAlert}
         type="confirm"
@@ -394,6 +417,16 @@ const url = `${API_BASE}/machine-user/fetchConnectedMachines/${machineNo}`;
         onCancel={() => setShowLogoutAlert(false)}
         confirmText="Logout"
         cancelText="Cancel"
+      />
+
+      {/* ── Error / Warning alert ── */}
+      <CustomAlert
+        visible={!!alertConfig}
+        type={alertConfig?.type ?? "error"}
+        title={alertConfig?.title ?? ""}
+        message={alertConfig?.message ?? ""}
+        onConfirm={() => setAlertConfig(null)}
+        confirmText="OK"
       />
     </SafeAreaView>
   );
