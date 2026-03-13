@@ -7,8 +7,29 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import CustomAlert from "./customalert";
-import { initializeCardBLE } from "@/app/bluetooth/manager";
-import { initializeMachineRFID } from "@/app/api/initialize";
+import {
+  readCardIdBLE,
+  initializeCardBLE,
+  forceInitializeCardBLE,
+} from "@/app/bluetooth/manager";
+import { initializeMachineRFID, checkCardOnServer } from "@/app/api/initialize";
+
+// ─────────────────────────────────────────────
+// INITIALIZATION FLOW (server-first):
+//
+// 1. User enters USN + amount → presses "Initialize Card"
+// 2. READ_ID: Tap card → get card_id (no data written)
+// 3. Check server with card_id:
+//    a. API error            → show "Server Error"
+//    b. Card EXISTS on server → show "Already Initialized" with balance/USN
+//    c. Card NOT on server   → proceed to step 4
+// 4. Try BLE INIT:
+//    a. SUCCESS              → register on server ✅
+//    b. ALREADY_INIT         → card was deleted from server but firmware still
+//                              has it → send FORCE_INIT (resets balance to 0)
+//                              → register on server ✅
+//    c. Any other error      → show error
+// ─────────────────────────────────────────────
 
 export default function InitializeScreen() {
   const router = useRouter();
@@ -18,8 +39,11 @@ export default function InitializeScreen() {
   const [usn, setUsn] = useState("");
   const [cardUUID, setCardUUID] = useState<string | null>(null);
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Processing...");
+
   const [showAlert, setShowAlert] = useState(false);
-  const [alertType, setAlertType] = useState<"success" | "error">("success");
+  const [alertType, setAlertType] = useState<"success" | "error" | "warning">("success");
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
@@ -28,13 +52,21 @@ export default function InitializeScreen() {
   const cardUUIDOpacity = useRef(new Animated.Value(0)).current;
   const cardUUIDTranslate = useRef(new Animated.Value(12)).current;
 
+  // ── Helpers ──────────────────────────────────
   const shake = () => {
     Animated.sequence([
-      Animated.timing(inputShake, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(inputShake, { toValue: 8,  duration: 60, useNativeDriver: true }),
       Animated.timing(inputShake, { toValue: -8, duration: 60, useNativeDriver: true }),
-      Animated.timing(inputShake, { toValue: 6, duration: 60, useNativeDriver: true }),
-      Animated.timing(inputShake, { toValue: 0, duration: 60, useNativeDriver: true }),
+      Animated.timing(inputShake, { toValue: 6,  duration: 60, useNativeDriver: true }),
+      Animated.timing(inputShake, { toValue: 0,  duration: 60, useNativeDriver: true }),
     ]).start();
+  };
+
+  const showError = (title: string, message: string, type: "error" | "warning" = "error") => {
+    setAlertType(type);
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setShowAlert(true);
   };
 
   const revealCardUUID = (uuid: string) => {
@@ -42,85 +74,186 @@ export default function InitializeScreen() {
     cardUUIDOpacity.setValue(0);
     cardUUIDTranslate.setValue(12);
     Animated.parallel([
-      Animated.timing(cardUUIDOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
+      Animated.timing(cardUUIDOpacity,   { toValue: 1, duration: 450, useNativeDriver: true }),
       Animated.timing(cardUUIDTranslate, { toValue: 0, duration: 450, useNativeDriver: true }),
     ]).start();
   };
 
-  const handleInitialize = async () => {
+  // ─────────────────────────────────────────────
+  // STEP 4b: Force re-init (card deleted from server)
+  // Balance reset to 0 + new amount written on card, then register on server
+  // ─────────────────────────────────────────────
+  const doForceInit = (value: number) => {
+    setLoadingLabel("Resetting card... tap card again");
+
+    forceInitializeCardBLE(value.toString(), async (result) => {
+      console.log("FORCE_INIT result:", JSON.stringify(result));
+
+      if (result.error === "NO_CARD_DETECTED") {
+        setIsLoading(false);
+        showError("No Card", "Place card on the reader and try again");
+        return;
+      }
+      if (result.error) {
+        setIsLoading(false);
+        showError("Re-initialization Failed", result.error);
+        return;
+      }
+      if (result.success && result.cardId) {
+        await doServerRegister(result.cardId, value, result.balance ?? value);
+      }
+    });
+  };
+
+  // ─────────────────────────────────────────────
+  // STEP 4: BLE INIT (after server confirms card is not registered)
+  // ─────────────────────────────────────────────
+  const doBleInit = (value: number) => {
+    setLoadingLabel("Tap card on reader...");
+
+    initializeCardBLE(value.toString(), async (result) => {
+      console.log("INIT result:", JSON.stringify(result));
+
+      if (result.cardId) revealCardUUID(result.cardId);
+
+      if (result.error === "NO_CARD_DETECTED") {
+        setIsLoading(false);
+        showError("No Card", "Place card on the reader and try again");
+        return;
+      }
+      if (result.error === "MINIMUM_REQUIRED") {
+        setIsLoading(false);
+        showError("Minimum ₹100", "Initialization requires minimum ₹100");
+        return;
+      }
+
+      // Firmware says ALREADY_INIT — but server already confirmed card is NOT there.
+      // This means card was deleted from server → force re-init.
+      if (result.error === "CARD_ALREADY_INITIALIZED") {
+        setLoadingLabel("Card deleted from system, re-initializing...");
+        setTimeout(() => doForceInit(value), 400);
+        return;
+      }
+
+      if (result.error) {
+        setIsLoading(false);
+        showError("Initialization Failed", result.error);
+        return;
+      }
+
+      // BLE SUCCESS → register on server
+      if (result.success && result.cardId) {
+        await doServerRegister(result.cardId, value, result.balance ?? value);
+      }
+    });
+  };
+
+  // ─────────────────────────────────────────────
+  // FINAL STEP: Register card on server
+  // ─────────────────────────────────────────────
+  const doServerRegister = async (cardId: string, value: number, cardBalance: number) => {
+    setLoadingLabel("Registering on server...");
+
+    try {
+      await initializeMachineRFID(machineId as string, value, cardId, usn.trim());
+
+      setIsLoading(false);
+      setAlertType("success");
+      setAlertTitle("Card Initialized!");
+      setAlertMessage(
+        `₹${value} loaded successfully.\nBalance: ₹${cardBalance}\nCard ID: ${cardId}\nUSN: ${usn.trim()}`
+      );
+      setShowAlert(true);
+    } catch (e: any) {
+      console.log("Server sync failed:", e);
+      setIsLoading(false);
+      showError(
+        "Sync Failed — Contact Admin",
+        `Card initialized with ₹${value} but server registration failed.\nCard ID: ${cardId}\nPlease contact admin immediately.`
+      );
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // MAIN HANDLER — entry point
+  // ─────────────────────────────────────────────
+  const handleInitialize = () => {
     const value = parseInt(amount, 10);
 
+    // ── Validation ──
     if (!amount || isNaN(value) || value <= 0) {
-      shake();
-      setAlertType("error"); setAlertTitle("Invalid Amount");
-      setAlertMessage("Please enter a valid amount"); setShowAlert(true); return;
+      shake(); showError("Invalid Amount", "Please enter a valid amount"); return;
     }
     if (value < 100) {
-      shake();
-      setAlertType("error"); setAlertTitle("Minimum ₹100");
-      setAlertMessage("Initialization requires minimum ₹100"); setShowAlert(true); return;
+      shake(); showError("Minimum ₹100", "Initialization requires minimum ₹100"); return;
     }
     if (!usn.trim()) {
-      shake();
-      setAlertType("error"); setAlertTitle("USN Required");
-      setAlertMessage("Please enter the student's register number"); setShowAlert(true); return;
+      shake(); showError("USN Required", "Please enter the student's register number"); return;
     }
 
     Animated.sequence([
       Animated.spring(btnScale, { toValue: 0.92, useNativeDriver: true, tension: 300 }),
-      Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, tension: 300 }),
+      Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true, tension: 300 }),
     ]).start();
 
-    initializeCardBLE(value.toString(), async (result) => {
-      console.log("BLE INIT RESULT:", JSON.stringify(result));
+    setIsLoading(true);
 
-      // ✅ Show UUID immediately whenever card is tapped — success OR error
-      if (result.cardId) {
-        revealCardUUID(result.cardId);
+    // ─────────────────────────────────────────────
+    // STEP 2: READ_ID — tap card to get UID only (nothing written)
+    // ─────────────────────────────────────────────
+    setLoadingLabel("Tap card to scan...");
+
+    readCardIdBLE(async (idResult) => {
+      console.log("READ_ID result:", JSON.stringify(idResult));
+
+      if (idResult.error === "NO_CARD_DETECTED" || idResult.error === "NO_CARD") {
+        setIsLoading(false);
+        showError("No Card", "Place card on the reader and try again");
+        return;
+      }
+      if (idResult.error) {
+        setIsLoading(false);
+        showError("Card Read Failed", "Could not read card. Try again.");
+        return;
+      }
+      if (!idResult.cardId) {
+        setIsLoading(false);
+        showError("Card Read Failed", "Could not read card ID. Try again.");
+        return;
       }
 
-      if (result.error === "CARD_ALREADY_INITIALIZED") {
-        setAlertType("error"); setAlertTitle("Already Initialized");
-        setAlertMessage(`This card is already initialized.\nBalance: ₹${result.balance ?? 0}\nCard ID: ${result.cardId ?? "—"}`);
-        setShowAlert(true); return;
-      }
-      if (result.error === "NO_CARD_DETECTED") {
-        setAlertType("error"); setAlertTitle("No Card");
-        setAlertMessage("Place card on the reader and try again"); setShowAlert(true); return;
-      }
-      if (result.error === "MINIMUM_REQUIRED") {
-        setAlertType("error"); setAlertTitle("Minimum ₹100");
-        setAlertMessage("Initialization requires minimum ₹100"); setShowAlert(true); return;
-      }
-      if (result.error) {
-        setAlertType("error"); setAlertTitle("Initialization Failed");
-        setAlertMessage(result.error); setShowAlert(true); return;
+      // Card ID obtained — show it immediately
+      revealCardUUID(idResult.cardId);
+
+      // ─────────────────────────────────────────────
+      // STEP 3: Check server — is this card already registered?
+      // ─────────────────────────────────────────────
+      setLoadingLabel("Checking server...");
+      const serverCard = await checkCardOnServer(idResult.cardId);
+
+      if (serverCard === null) {
+        // API error — don't proceed
+        setIsLoading(false);
+        showError("Server Error", "Could not verify card status. Please try again.");
+        return;
       }
 
-      if (result.success) {
-        setTimeout(async () => {
-          try {
-            await initializeMachineRFID(
-              machineId as string,
-              value,
-              result.cardId!,
-              usn.trim(),
-            );
-
-            setAlertType("success");
-            setAlertTitle("Card Initialized!");
-            setAlertMessage(
-              `₹${value} loaded successfully.\nBalance: ₹${result.balance ?? value}\nCard ID: ${result.cardId}`
-            );
-            setShowAlert(true);
-          } catch (e: any) {
-            console.log("Server sync failed:", e);
-            setAlertType("error"); setAlertTitle("Sync Failed");
-            setAlertMessage("Card initialized but server sync failed.\nPlease contact support.");
-            setShowAlert(true);
-          }
-        }, 700);
+      if (serverCard.exists) {
+        // Card is already registered on server → block
+        setIsLoading(false);
+        showError(
+          "Already Initialized",
+          `This card is already registered.\nBalance: ₹${serverCard.balance ?? 0}\nUSN: ${serverCard.usn ?? "—"}`,
+          "warning"
+        );
+        return;
       }
+
+      // ─────────────────────────────────────────────
+      // Card NOT on server → proceed with BLE INIT
+      // (1st tap = READ_ID, 2nd tap = INIT/FORCE_INIT)
+      // ─────────────────────────────────────────────
+      setTimeout(() => doBleInit(value), 300);
     });
   };
 
@@ -150,7 +283,11 @@ export default function InitializeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            disabled={isLoading}
+          >
             <Ionicons name="chevron-back" size={22} color="#FFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Initialize Card</Text>
@@ -174,17 +311,19 @@ export default function InitializeScreen() {
 
         {/* USN Input */}
         <View style={styles.fieldSection}>
-       
           <Animated.View style={{ transform: [{ translateX: inputShake }] }}>
             <TextInput
               style={styles.fieldInput}
               placeholder="Enter your register number"
               placeholderTextColor="rgba(255,255,255,0.2)"
               value={usn}
-              onChangeText={(text) => setUsn(text.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              onChangeText={(text) =>
+                setUsn(text.toUpperCase().replace(/[^A-Z0-9]/g, ""))
+              }
               autoCapitalize="characters"
               maxLength={12}
               selectionColor="#F2CB07"
+              editable={!isLoading}
             />
           </Animated.View>
           <View style={styles.fieldUnderline} />
@@ -193,7 +332,9 @@ export default function InitializeScreen() {
         {/* Amount input */}
         <View style={styles.amountSection}>
           <Text style={styles.amountLabel}>LOAD AMOUNT</Text>
-          <Animated.View style={[styles.amountRow, { transform: [{ translateX: inputShake }] }]}>
+          <Animated.View
+            style={[styles.amountRow, { transform: [{ translateX: inputShake }] }]}
+          >
             <Text style={styles.rupee}>₹</Text>
             <TextInput
               style={styles.amountInput}
@@ -201,9 +342,12 @@ export default function InitializeScreen() {
               placeholderTextColor="rgba(255,255,255,0.2)"
               keyboardType="numeric"
               value={amount}
-              onChangeText={(text) => setAmount(text.replace(/[^0-9]/g, "").replace(/^0+/, ""))}
+              onChangeText={(text) =>
+                setAmount(text.replace(/[^0-9]/g, "").replace(/^0+/, ""))
+              }
               maxLength={6}
               selectionColor="#F2CB07"
+              editable={!isLoading}
             />
           </Animated.View>
           <View style={styles.amountUnderline} />
@@ -217,6 +361,7 @@ export default function InitializeScreen() {
               key={q}
               style={[styles.quickChip, amount === String(q) && styles.quickChipActive]}
               onPress={() => setAmount(String(q))}
+              disabled={isLoading}
             >
               <Text style={[styles.quickText, amount === String(q) && styles.quickTextActive]}>
                 ₹{q}
@@ -230,10 +375,7 @@ export default function InitializeScreen() {
           <Animated.View
             style={[
               styles.uuidCard,
-              {
-                opacity: cardUUIDOpacity,
-                transform: [{ translateY: cardUUIDTranslate }],
-              },
+              { opacity: cardUUIDOpacity, transform: [{ translateY: cardUUIDTranslate }] },
             ]}
           >
             <View style={styles.uuidRow}>
@@ -254,18 +396,48 @@ export default function InitializeScreen() {
           </Animated.View>
         )}
 
+        {/* Loading hint — tells user what to do during 2-tap flow */}
+        {isLoading && (
+          <View style={styles.hintBox}>
+            <Ionicons name="information-circle-outline" size={16} color="rgba(242,203,7,0.6)" />
+            <Text style={styles.hintText}>
+              {loadingLabel.includes("Tap card")
+                ? "Hold your card near the reader"
+                : loadingLabel.includes("Resetting")
+                ? "Hold card again to reset and re-initialize"
+                : "Please wait..."}
+            </Text>
+          </View>
+        )}
+
         {/* Button */}
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-          <TouchableOpacity style={styles.submitBtn} onPress={handleInitialize} activeOpacity={0.88}>
-            <Ionicons name="link" size={20} color="#1A0E4F" />
-            <Text style={styles.submitText}>Initialize Card</Text>
+          <TouchableOpacity
+            style={[styles.submitBtn, isLoading && styles.submitBtnLoading]}
+            onPress={handleInitialize}
+            activeOpacity={0.88}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Ionicons name="radio-outline" size={20} color="#1A0E4F" />
+                <Text style={styles.submitText}>{loadingLabel}</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="link" size={20} color="#1A0E4F" />
+                <Text style={styles.submitText}>Initialize Card</Text>
+              </>
+            )}
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
 
       <CustomAlert
-        visible={showAlert} type={alertType}
-        title={alertTitle} message={alertMessage}
+        visible={showAlert}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
         onConfirm={handleAlertClose}
       />
     </SafeAreaView>
@@ -313,16 +485,16 @@ const styles = StyleSheet.create({
   stepDotActive: { backgroundColor: "rgba(242,203,7,0.2)", borderColor: "#F2CB07" },
   stepNum: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.6)" },
   stepLabel: { fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 0.5 },
-  stepLine: { width: 40, height: 1, backgroundColor: "rgba(255,255,255,0.1)", marginBottom: 14 },
+  stepLine: {
+    width: 40, height: 1,
+    backgroundColor: "rgba(255,255,255,0.1)", marginBottom: 14,
+  },
 
   fieldSection: { marginBottom: 28 },
-  fieldLabel: {
-    fontSize: 11, color: "rgba(255,255,255,0.35)",
-    letterSpacing: 3, fontWeight: "700", marginBottom: 10,
-  },
   fieldInput: {
     fontSize: 15, fontWeight: "700", color: "#FFF",
-    paddingVertical: 6, letterSpacing: 1   },
+    paddingVertical: 6, letterSpacing: 1,
+  },
   fieldUnderline: {
     height: 2, borderRadius: 1,
     backgroundColor: "rgba(255,255,255,0.12)", marginTop: 6,
@@ -358,7 +530,7 @@ const styles = StyleSheet.create({
   uuidCard: {
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1, borderColor: "rgba(74,222,128,0.25)",
-    borderRadius: 16, padding: 14, marginBottom: 24,
+    borderRadius: 16, padding: 14, marginBottom: 16,
   },
   uuidRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   uuidIconWrap: {
@@ -382,6 +554,15 @@ const styles = StyleSheet.create({
   },
   uuidBadgeText: { fontSize: 11, color: "#4ADE80", fontWeight: "600" },
 
+  hintBox: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "rgba(242,203,7,0.05)",
+    borderWidth: 1, borderColor: "rgba(242,203,7,0.1)",
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    marginBottom: 16,
+  },
+  hintText: { fontSize: 12, color: "rgba(255,255,255,0.45)", flex: 1 },
+
   submitBtn: {
     backgroundColor: "#F2CB07", borderRadius: 16, height: 58,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
@@ -389,5 +570,6 @@ const styles = StyleSheet.create({
     shadowColor: "#F2CB07", shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35, shadowRadius: 14, elevation: 8,
   },
+  submitBtnLoading: { backgroundColor: "rgba(242,203,7,0.6)", shadowOpacity: 0.1 },
   submitText: { color: "#1A0E4F", fontSize: 17, fontWeight: "800", letterSpacing: 0.3 },
 });
