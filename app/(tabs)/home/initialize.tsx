@@ -59,35 +59,93 @@ export default function InitializeScreen() {
     setLoadingLabel("Tap card again to write...");
     initializeCardBLE(value.toString(), async (result) => {
       if (result.cardId) revealCardUUID(result.cardId);
-      if (result.error === "NO_CARD_DETECTED") { setIsLoading(false); showMsg("error", "No Card", "Place card on the reader and try again."); return; }
-      if (result.error === "MINIMUM_REQUIRED") { setIsLoading(false); showMsg("error", "Minimum ₹100", "Initialization requires minimum ₹100."); return; }
+      if (result.error === "NO_CARD_DETECTED") {
+        setIsLoading(false);
+        showMsg("error", "No Card", "Place card on the reader and try again.");
+        return;
+      }
+      if (result.error === "MINIMUM_REQUIRED") {
+        setIsLoading(false);
+        showMsg("error", "Minimum ₹100", "Initialization requires minimum ₹100.");
+        return;
+      }
       if (result.error === "CARD_ALREADY_INITIALIZED") {
         setIsLoading(false);
         showMsg("warning", "Card Already Initialized", `This card is already registered.\n\nCard ID: ${cardId}\n\nPlease contact an administrator.`);
         return;
       }
-      if (result.error) { setIsLoading(false); showMsg("error", "Initialization Failed", `Error: ${result.error}\nCard ID: ${cardId}`); return; }
-      if (result.success && result.cardId) await doServerRegister(result.cardId, value, result.balance ?? value);
+      if (result.error) {
+        setIsLoading(false);
+        showMsg("error", "Initialization Failed", `Error: ${result.error}\nCard ID: ${cardId}`);
+        return;
+      }
+      if (result.success && result.cardId) {
+        await doServerRegister(result.cardId, value, result.balance ?? value);
+      }
     });
   };
 
+  // ─────────────────────────────────────────────
+  // SERVER REGISTER — handles each status distinctly
+  // ─────────────────────────────────────────────
   const doServerRegister = async (cardId: string, value: number, balance: number) => {
     setLoadingLabel("Registering on server...");
-    try {
-      await initializeMachineRFID(machineId as string, value, cardId, usn.trim());
-      setIsLoading(false);
-      showMsg("success", "Card Initialized!", `₹${value} loaded successfully.\nBalance: ₹${balance}\nCard ID: ${cardId}\nUSN: ${usn.trim()}`);
-    } catch (e: any) {
-      setIsLoading(false);
-      showMsg("error", "Critical: Sync Failed", `Card was written but server registration failed.\n\nCard ID: ${cardId}\nUSN: ${usn.trim()}\n\nPlease contact admin immediately.`);
+
+    const result = await initializeMachineRFID(
+      machineId as string, value, cardId, usn.trim()
+    );
+
+    setIsLoading(false);
+
+    switch (result.status) {
+      case "success":
+        showMsg(
+          "success",
+          "Card Initialized!",
+          `₹${value} loaded successfully.\nBalance: ₹${balance}\nCard ID: ${cardId}\nUSN: ${usn.trim()}`
+        );
+        break;
+
+      case "already_registered":
+        // Card was written via BLE but DB already had it — likely a race or retry
+        showMsg(
+          "warning",
+          "Already Registered",
+          `Card was written but was already registered on the server.\n\nCard ID: ${cardId}\n\nPlease verify the balance with admin.`
+        );
+        break;
+
+      case "safe_to_retry":
+        // Server rejected before touching DB — card hardware is written but DB is clean
+        showMsg(
+          "error",
+          "Server Rejected — Safe to Retry",
+          `Card was physically initialized but the server rejected registration before saving.\n\nYou may retry initialization.\n\nCard ID: ${cardId}\nReason: ${result.message}`
+        );
+        break;
+
+      case "ambiguous_failure":
+        // 5xx — server crashed mid-write, DB state is unknown
+        showMsg(
+          "error",
+          "Critical: Sync Unknown",
+          `Card was written to hardware but the server crashed during registration.\n\nThe database may or may not have saved this card.\n\nDo NOT retry — contact admin immediately.\n\nCard ID: ${cardId}\nUSN: ${usn.trim()}\nError: ${result.message}`
+        );
+        break;
     }
   };
 
   const handleInitialize = () => {
     const value = parseInt(amount, 10);
-    if (!amount || isNaN(value) || value <= 0) { shake(); showMsg("error", "Invalid Amount", "Please enter a valid amount."); return; }
-    if (value < 100) { shake(); showMsg("error", "Minimum ₹100", "Initialization requires minimum ₹100."); return; }
-    if (!usn.trim()) { shake(); showMsg("error", "USN Required", "Please enter the student's register number."); return; }
+    if (!amount || isNaN(value) || value <= 0) {
+      shake(); showMsg("error", "Invalid Amount", "Please enter a valid amount."); return;
+    }
+    if (value < 100) {
+      shake(); showMsg("error", "Minimum ₹100", "Initialization requires minimum ₹100."); return;
+    }
+    if (!usn.trim()) {
+      shake(); showMsg("error", "USN Required", "Please enter the student's register number."); return;
+    }
 
     Animated.sequence([
       Animated.spring(btnScale, { toValue: 0.92, useNativeDriver: true, tension: 300 }),
@@ -98,26 +156,44 @@ export default function InitializeScreen() {
     setLoadingLabel("Tap card to scan...");
 
     readCardIdBLE(async (idResult) => {
-      if (idResult.error === "NO_CARD_DETECTED" || idResult.error === "NO_CARD") { setIsLoading(false); showMsg("error", "No Card", "Place card on the reader and try again."); return; }
-      if (idResult.error || !idResult.cardId) { setIsLoading(false); showMsg("error", "Card Read Failed", "Could not read card. Try again."); return; }
+      if (idResult.error === "NO_CARD_DETECTED" || idResult.error === "NO_CARD") {
+        setIsLoading(false);
+        showMsg("error", "No Card", "Place card on the reader and try again.");
+        return;
+      }
+      if (idResult.error || !idResult.cardId) {
+        setIsLoading(false);
+        showMsg("error", "Card Read Failed", "Could not read card. Try again.");
+        return;
+      }
 
       const cardId = idResult.cardId;
       revealCardUUID(cardId);
       setLoadingLabel("Checking server...");
 
       const serverCard = await checkCardOnServer(cardId);
-      if (serverCard === null) { setIsLoading(false); showMsg("error", "Server Error", "Could not verify card with server. Please check your connection and try again."); return; }
-      if (serverCard.exists) {
+      if (serverCard === null) {
         setIsLoading(false);
-        showMsg("warning", "Card Already Registered", `This card is already initialized and cannot be re-initialized.\n\nCard ID: ${cardId}\nBalance: ₹${serverCard.balance ?? 0}\nUSN: ${serverCard.usn ?? "—"}\n\nIf this is an error, contact admin.`);
+        showMsg("error", "Server Error", "Could not verify card with server. Please check your connection and try again.");
         return;
       }
+      if (serverCard.exists) {
+        setIsLoading(false);
+        showMsg(
+          "warning",
+          "Card Already Registered",
+          `This card is already initialized and cannot be re-initialized.\n\nCard ID: ${cardId}\nBalance: ₹${serverCard.balance ?? 0}\nUSN: ${serverCard.usn ?? "—"}\n\nIf this is an error, contact admin.`
+        );
+        return;
+      }
+
       setTimeout(() => doBleInit(value, cardId), 300);
     });
   };
 
   const handleAlertClose = () => {
     setShowAlert(false);
+    // Only navigate back on clean success
     if (alertType === "success") {
       setAmount(""); setUsn(""); setCardUUID(null);
       cardUUIDOpacity.setValue(0); cardUUIDTranslate.setValue(12);
@@ -203,7 +279,12 @@ export default function InitializeScreen() {
         {/* Quick amounts */}
         <View style={styles.quickRow}>
           {[100, 150, 200, 250].map((q) => (
-            <TouchableOpacity key={q} style={[styles.quickChip, amount === String(q) && styles.quickChipActive]} onPress={() => setAmount(String(q))} disabled={isLoading}>
+            <TouchableOpacity
+              key={q}
+              style={[styles.quickChip, amount === String(q) && styles.quickChipActive]}
+              onPress={() => setAmount(String(q))}
+              disabled={isLoading}
+            >
               <Text style={[styles.quickText, amount === String(q) && styles.quickTextActive]}>₹{q}</Text>
             </TouchableOpacity>
           ))}
@@ -213,7 +294,9 @@ export default function InitializeScreen() {
         {cardUUID && (
           <Animated.View style={[styles.uuidCard, { opacity: cardUUIDOpacity, transform: [{ translateY: cardUUIDTranslate }] }]}>
             <View style={styles.uuidRow}>
-              <View style={styles.uuidIconWrap}><Ionicons name="card-outline" size={18} color="#F2CB07" /></View>
+              <View style={styles.uuidIconWrap}>
+                <Ionicons name="card-outline" size={18} color="#F2CB07" />
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.uuidTitle}>CARD UUID</Text>
                 <Text style={styles.uuidValue} numberOfLines={1} ellipsizeMode="middle">{cardUUID}</Text>
@@ -230,13 +313,20 @@ export default function InitializeScreen() {
         {isLoading && (
           <View style={styles.hintBox}>
             <Ionicons name="information-circle-outline" size={16} color="rgba(242,203,7,0.6)" />
-            <Text style={styles.hintText}>{loadingLabel.includes("Tap") ? "Hold your card near the reader" : "Please wait..."}</Text>
+            <Text style={styles.hintText}>
+              {loadingLabel.includes("Tap") ? "Hold your card near the reader" : "Please wait..."}
+            </Text>
           </View>
         )}
 
         {/* Button */}
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-          <TouchableOpacity style={[styles.submitBtn, isLoading && styles.submitBtnLoading]} onPress={handleInitialize} activeOpacity={0.88} disabled={isLoading}>
+          <TouchableOpacity
+            style={[styles.submitBtn, isLoading && styles.submitBtnLoading]}
+            onPress={handleInitialize}
+            activeOpacity={0.88}
+            disabled={isLoading}
+          >
             {isLoading ? (
               <><Ionicons name="radio-outline" size={20} color="#1A0E4F" /><Text style={styles.submitText}>{loadingLabel}</Text></>
             ) : (
@@ -246,7 +336,13 @@ export default function InitializeScreen() {
         </Animated.View>
       </ScrollView>
 
-      <CustomAlert visible={showAlert} type={alertType} title={alertTitle} message={alertMessage} onConfirm={handleAlertClose} />
+      <CustomAlert
+        visible={showAlert}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        onConfirm={handleAlertClose}
+      />
     </SafeAreaView>
   );
 }
@@ -256,12 +352,9 @@ const styles = StyleSheet.create({
   bgBase: { ...StyleSheet.absoluteFillObject, backgroundColor: "#0F0A2E" },
   bgOrb: { position: "absolute", bottom: -80, left: -80, width: 280, height: 280, borderRadius: 140, backgroundColor: "rgba(56,32,140,0.45)" },
   bgOrbTop: { position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(242,203,7,0.06)" },
-  scrollContent: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 40 }, // ← paddingTop: 20
+  scrollContent: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 40 },
 
-  header: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between", marginBottom: 28,
-  },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 28 },
   backBtn: { width: 42, height: 42, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#FFF", letterSpacing: 0.3 },
 

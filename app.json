@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "lorent",
+    "name": "lorenta",
     "slug": "lorent",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -60,6 +60,7 @@
       "eas": {
         "projectId": "1dbac4db-478e-4bef-8062-e7daf4f475ec"
       }
-    }
+    },
+    "owner": "manojrustcult"
   }
 }
